@@ -1,0 +1,37 @@
+[package]
+name = "norma"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+candle-core = "0.6.0"
+candle-nn = "0.6.0"
+candle-transformers = "0.6.0"
+hf-hub = { version = "0.3.2", features = ["tokio"] }
+cpal = "0.15.3"
+serde = "1.0.202"
+thiserror = "1.0.61"
+dasp_sample = "0.11.0"
+dasp_frame = "0.11.0"
+dasp_signal = "0.11.0"
+dasp_ring_buffer = "0.11.0"
+dasp_interpolate = { version = "0.11.0", features = ["sinc"] }
+thingbuf = "0.1.6"
+tracing = { version = "0.1.40", features = ["async-await"] }
+tokio = { version = "1.38.0", features = ["sync"] }
+tokenizers = { version = "0.19.1", features = ["hf-hub"] }
+rand = "0.8.5"
+serde_json = "1.0.119"
+byteorder = "1.5.0"
+strum = { version = "0.26.3", features = ["derive"] }
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+cuda-flash = [
+  "candle-core/cuda",
+  "candle-nn/cuda",
+  "candle-transformers/flash-attn",
+]
+cudnn = ["candle-core/cudnn", "candle-nn/cuda", "candle-transformers/cuda"]
+metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
