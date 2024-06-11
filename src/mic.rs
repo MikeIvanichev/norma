@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct MicSettings {
-    on_error: OnError,
+    pub selected_device: Option<String>,
+    pub on_error: OnError,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]

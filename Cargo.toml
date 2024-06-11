@@ -2,7 +2,6 @@
 name = "norma"
 version = "0.1.0"
 edition = "2021"
-resolver = "2"
 
 [dependencies]
 candle-core = "0.5.1"
@@ -11,9 +10,15 @@ candle-transformers = "0.5.1"
 hf-hub = "0.3.2"
 cpal = "0.15.3"
 serde = "1.0.202"
+thiserror = "1.0.61"
+dasp_sample = "0.11.0"
+dasp_frame = "0.11.0"
+dasp_signal = "0.11.0"
+dasp_ring_buffer = "0.11.0"
+dasp_interpolate = { version = "0.11.0", features = ["sinc"] }
 
 [features]
 default = []
-cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
-cudnn = ["candle-core/cudnn", "candle-nn/cuda", "candle-transformers/cuda"]
-metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
+#cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+#cudnn = ["candle-core/cudnn", "candle-nn/cuda", "candle-transformers/cuda"]
+#metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]

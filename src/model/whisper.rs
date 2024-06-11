@@ -1,4 +1,5 @@
 use candle_core::Tensor;
+use cpal::SizedSample;
 use serde::{Deserialize, Serialize};
 
 use crate::{private, ModelDefinition};
@@ -8,6 +9,12 @@ pub struct WhisperSettings {
     model: Model,
     quantized: bool,
     task: Task,
+}
+
+impl Into<Whisper> for WhisperSettings {
+    fn into(self) -> Whisper {
+        todo!()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
