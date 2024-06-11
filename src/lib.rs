@@ -4,7 +4,7 @@ pub mod model;
 
 use std::{
     cmp::Ordering,
-    sync::mpsc::{channel, Receiver},
+    sync::mpsc::{channel, Receiver, Sender},
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -13,7 +13,7 @@ use crate::dtype::DType;
 
 use candle_core::Tensor;
 use cpal::{
-    traits::{DeviceTrait, HostTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait},
     SampleRate, Stream, SupportedStreamConfigRange,
 };
 use dasp_frame::Frame;
@@ -25,7 +25,8 @@ use thiserror::Error;
 
 pub struct Handle {
     jh: JoinHandle<()>,
-    tensor_tx: Receiver<Tensor>,
+    tensor_tx: Sender<Tensor>,
+    string_rx: Receiver<String>,
 }
 
 pub struct Norma<T>
@@ -111,7 +112,11 @@ where
         Equal
     }
 
-    pub fn start_transcription(&mut self) -> Result<Receiver<String>, StartError> {
+    pub fn start_transcription(&mut self) -> Result<(), StartError> {
+        if self._stream.is_some() {
+            return Err(StartError::TranscriptionRunning);
+        }
+
         let host = cpal::default_host();
 
         let device = match self.mic_settings.selected_device {
@@ -137,9 +142,32 @@ where
 
         input_conf.sort_by(|lhs, rhs| self.cmp_config(lhs, rhs));
 
-        let (tensor_tx, tensor_rx) = channel();
+        if let Some(ref handle) = self._handle {
+            let stream = self.create_stream(input_conf, device, handle.tensor_tx.clone())?;
+            stream.play()?;
+        } else {
+            let (tensor_tx, tensor_rx) = channel();
+            let stream = self.create_stream(input_conf, device, tensor_tx.clone())?;
+            stream.play()?;
+            let (string_tx, string_rx) = channel();
+            let jh = thread::spawn(self.model_definition.run(tensor_rx, string_tx));
+            self._handle = Some(Handle {
+                jh,
+                tensor_tx,
+                string_rx,
+            });
+        };
 
-        let stream = loop {
+        Ok(())
+    }
+
+    fn create_stream(
+        &self,
+        mut input_conf: Vec<SupportedStreamConfigRange>,
+        device: cpal::Device,
+        tensor_tx: Sender<Tensor>,
+    ) -> Result<Stream, StartError> {
+        loop {
             let Some(config) = input_conf.pop() else {
                 break Err(StartError::NoConfigFound);
             };
@@ -212,15 +240,7 @@ where
                 ),
                 _ => continue,
             });
-        }?;
-
-        let (string_tx, string_rx) = channel();
-
-        let jh = Some(thread::spawn(
-            self.model_definition.run(tensor_rx, string_tx),
-        ));
-
-        Ok(string_rx)
+        }
     }
 
     pub fn end_transcription(&mut self) -> Result<(), EndError> {
@@ -255,6 +275,9 @@ where
 
 #[derive(Debug, Error)]
 pub enum StartError {
+    #[error("The transcription is already running")]
+    TranscriptionRunning,
+
     #[error("Failed to find an available input device")]
     DeviceError,
 
@@ -272,6 +295,9 @@ pub enum StartError {
 
     #[error("An error ocured when building the stream")]
     BuildStreamError(#[from] cpal::BuildStreamError),
+
+    #[error("Failed to play stream (explicitly start the recording)")]
+    PlayStreamError(#[from] cpal::PlayStreamError),
 }
 
 pub enum EndError {
