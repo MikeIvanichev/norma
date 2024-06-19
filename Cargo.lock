@@ -1174,6 +1174,7 @@ dependencies = [
  "hf-hub",
  "serde",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

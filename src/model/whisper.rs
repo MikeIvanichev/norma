@@ -17,6 +17,14 @@ impl Into<Whisper> for WhisperSettings {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum Device {
+    #[default]
+    Cpu,
+    Cuda(usize),
+    Metal(usize),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
 pub enum Model {
     Tiny,
