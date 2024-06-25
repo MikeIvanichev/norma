@@ -30,5 +30,5 @@ pub trait Model: Send + 'static {
     const SAMPLE_RATE: u32;
 
     fn clear_context(&mut self);
-    fn transcribe(&mut self, data: &mut [Self::Data]) -> String;
+    fn transcribe(&mut self, data: &mut Vec<Self::Data>) -> String;
 }

@@ -1,8 +1,9 @@
 use cpal::{
     default_host,
-    traits::{DeviceTrait, HostTrait},
+    traits::{DeviceTrait, HostTrait, StreamTrait},
     SampleRate, SupportedStreamConfigRange,
 };
+use thingbuf::recycling::WithCapacity;
 
 use crate::{
     mic::MicSettings,
@@ -14,8 +15,10 @@ use super::parse_data;
 
 use std::{
     cmp::Ordering::{self, Equal},
+    ops::DerefMut,
+    string,
     sync::{
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, sync_channel, Receiver, Sender, SyncSender},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -26,13 +29,8 @@ type MicStream = Arc<Mutex<Option<cpal::Stream>>>;
 enum CtrlMsg {
     StartStream {
         mic_settings: MicSettings,
-        res_ch: Sender<Result<Receiver<String>, StartError>>,
+        res_ch: SyncSender<Result<Receiver<String>, StartError>>,
     },
-}
-
-struct DataChan<T> {
-    data_rx: thingbuf::mpsc::blocking::Receiver<Vec<T>>,
-    error_rx: Receiver<Option<cpal::StreamError>>,
 }
 
 pub struct Transcriber<T>
@@ -41,9 +39,8 @@ where
 {
     stream: MicStream,
     ctrl_rx: Receiver<CtrlMsg>,
-    data_channel: Option<DataChan<T::Data>>,
-    model: T,
     common_model_params: CommonModelParams,
+    model: T,
 }
 
 impl<T> Transcriber<T>
@@ -58,7 +55,7 @@ where
 
         let common_model_params = model_definition.common_params();
 
-        let (ctrl_tx, ctrl_rx) = channel();
+        let (ctrl_tx, ctrl_rx) = sync_channel(0);
 
         let model: T = model_definition.try_into()?;
 
@@ -68,7 +65,6 @@ where
                 ctrl_rx,
                 model,
                 common_model_params,
-                data_channel: None,
             },
             TranscriberHandle { stream, ctrl_tx },
         ))
@@ -81,18 +77,51 @@ where
         todo!()
     }
 
-    pub async fn run(mut self) -> () {
+    pub async fn run(mut self) {
         while let Ok(command) = self.ctrl_rx.recv() {
             match command {
                 CtrlMsg::StartStream {
                     mic_settings,
                     res_ch,
                 } => {
-                    // try to create a new stream ->
-                    // return res using chan, if chan is closed dump Stream ->
+                    let recycle = thingbuf::recycling::WithCapacity::new()
+                        .with_min_capacity(self.common_model_params.max_sample_len)
+                        .with_max_capacity(self.common_model_params.max_sample_len);
+                    let (data_tx, data_rx) =
+                        thingbuf::mpsc::blocking::with_recycle::<Vec<T::Data>, _>(
+                            self.common_model_params.data_buffer,
+                            recycle,
+                        );
+                    let (error_tx, error_rx) = sync_channel(1);
+                    let (string_tx, string_rx) =
+                        sync_channel(self.common_model_params.string_buffer);
 
-                    // Start data loop ->
+                    match self.create_stream(mic_settings, data_tx, error_tx) {
+                        Ok(stream) => {
+                            {
+                                let mut guard = self.stream.lock().unwrap_or_else(|e| {
+                                    self.stream.clear_poison();
+                                    e.into_inner()
+                                });
+                                *guard = Some(stream);
+                                if res_ch.try_send(Ok(string_rx)).is_err() {
+                                    *guard = None;
+                                };
+                            }
 
+                            while let Some(mut data) = data_rx.recv_ref() {
+                                let string = self.model.transcribe(data.deref_mut());
+                                if string_tx.send(string).is_err() {
+                                    todo!();
+                                    break;
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            let _ = res_ch.try_send(Err(err));
+                            break;
+                        }
+                    }
                     self.model.clear_context();
                 }
             }
@@ -108,7 +137,12 @@ where
         todo!()
     }
 
-    fn create_stream(&self, mic_settings: MicSettings) -> Result<cpal::Stream, StartError> {
+    fn create_stream(
+        &mut self,
+        mic_settings: MicSettings,
+        data_tx: thingbuf::mpsc::blocking::Sender<Vec<T::Data>, WithCapacity>,
+        error_tx: SyncSender<cpal::StreamError>,
+    ) -> Result<cpal::Stream, StartError> {
         let host = cpal::default_host();
 
         let device = match mic_settings.selected_device {
@@ -133,18 +167,11 @@ where
             .collect::<Vec<SupportedStreamConfigRange>>();
         input_conf.sort_by(|lhs, rhs| Self::cmp_mic_config(lhs, rhs));
 
-        let recycle = thingbuf::recycling::WithCapacity::new()
-            .with_min_capacity(self.common_model_params.max_sample_len)
-            .with_max_capacity(self.common_model_params.max_sample_len);
-        let (data_tx, data_rx) = thingbuf::mpsc::blocking::with_recycle::<Vec<T::Data>, _>(
-            self.common_model_params.data_buffer,
-            recycle,
-        );
-
         loop {
             let Some(config) = input_conf.pop() else {
                 break Err(StartError::NoConfigFound);
             };
+
             let sample_format = config.sample_format();
             let config = config
                 .try_with_sample_rate(SampleRate(T::SAMPLE_RATE))
@@ -154,16 +181,16 @@ where
             let msl = self.common_model_params.max_sample_len;
 
             break Ok(match sample_format {
-                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, msl),
-                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, msl),
-                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, msl),
-                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, msl),
-                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, msl),
-                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, msl),
-                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, msl),
-                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, msl),
-                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, msl),
-                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, msl),
+                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
                 _ => continue,
             });
         }
@@ -208,5 +235,5 @@ where
 
 pub struct TranscriberHandle {
     stream: MicStream,
-    ctrl_tx: Sender<CtrlMsg>,
+    ctrl_tx: SyncSender<CtrlMsg>,
 }

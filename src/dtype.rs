@@ -3,7 +3,7 @@ use dasp_sample::Duplex;
 macro_rules! dtype {
     ($([$dtype:expr, $sample:expr] => $t:ty),+, _ => [$($it:ty),* $(,)?]  $(,)?) => {
 
-        pub trait DType: cpal::SizedSample + dasp_frame::Frame + Send $(+Duplex<$it>)+ $(+Duplex<$t>)+ + 'static{
+        pub trait DType: cpal::SizedSample + dasp_frame::Frame + Send + Sync $(+Duplex<$it>)+ $(+Duplex<$t>)+ + 'static{
             fn to_dtype() -> candle_core::DType;
             fn to_sample_fromat() -> cpal::SampleFormat;
         }
