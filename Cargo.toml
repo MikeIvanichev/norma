@@ -16,7 +16,11 @@ dasp_frame = "0.11.0"
 dasp_signal = "0.11.0"
 dasp_ring_buffer = "0.11.0"
 dasp_interpolate = { version = "0.11.0", features = ["sinc"] }
-tracing = "0.1.40"
+use = "0.0.1-pre.0"
+tokio = { version = "1.38.0", features = ["sync"] }
+async-channel = "2.3.1"
+tracing = { version = "0.1.40", features = ["async-await"] }
+thingbuf = "0.1.6"
 
 [features]
 default = []

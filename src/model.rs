@@ -1,8 +1,8 @@
 use serde::{de::DeserializeOwned, Serialize};
-use std::error::Error;
 
-use crate::{dtype::DType, private::Sealed};
+use crate::dtype::DType;
 
+pub mod dummy;
 pub mod whisper;
 
 pub enum ModelInput<T> {
@@ -10,18 +10,25 @@ pub enum ModelInput<T> {
     ClearContext,
 }
 
-pub trait ModelDefinition: Serialize + DeserializeOwned + PartialEq + Sealed {
-    const SAMPLE_RATE: u32;
-    const MAX_SAMPLE_LEN: usize;
-    type Data: DType;
-    type TranscriptionError: Error;
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CommonModelParams {
+    pub max_sample_len: usize,
+    pub data_buffer: usize,
+    pub string_buffer: usize,
+}
 
-    fn run(
-        &self,
-    ) -> Result<
-        impl FnMut(ModelInput<&mut [Self::Data]>) -> Result<String, Self::TranscriptionError>
-            + Send
-            + 'static,
-        impl Error,
-    >;
+pub trait ModelDefinition:
+    TryInto<Self::Model> + Serialize + DeserializeOwned + PartialEq + Sync + Send
+{
+    type Model;
+
+    fn common_params(&self) -> CommonModelParams;
+}
+
+pub trait Model: Send + 'static {
+    type Data: DType;
+    const SAMPLE_RATE: u32;
+
+    fn clear_context(&mut self);
+    fn transcribe(&mut self, data: &mut [Self::Data]) -> String;
 }

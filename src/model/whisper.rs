@@ -2,8 +2,6 @@ use candle_core::Tensor;
 use cpal::SizedSample;
 use serde::{Deserialize, Serialize};
 
-use crate::{private, ModelDefinition};
-
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
 pub struct WhisperSettings {
     model: Model,
