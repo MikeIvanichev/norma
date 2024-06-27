@@ -16,7 +16,6 @@ pub enum ModelInput<T> {
 pub struct CommonModelParams {
     pub max_sample_len: usize,
     pub data_buffer: usize,
-    pub read_interval: Duration,
     pub string_buffer: usize,
 }
 

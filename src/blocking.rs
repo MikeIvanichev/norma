@@ -25,10 +25,6 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-struct TmpStream {
-    tx: SyncSender<()>,
-}
-
 type MicStream = Arc<Mutex<Option<cpal::Stream>>>;
 
 enum CtrlMsg {
@@ -47,6 +43,8 @@ where
     common_model_params: CommonModelParams,
     model: T,
 }
+
+unsafe impl<T: Model> Send for Transcriber<T> {}
 
 impl<T> Transcriber<T>
 where
@@ -79,10 +77,9 @@ where
     where
         D: ModelDefinition<Model = T>,
     {
-        //let (transcriber, th) = Self::new(model_definition)?;
-        //let jh = thread::spawn(move || transcriber.run());
-        //Ok((jh, th))
-        todo!()
+        let (transcriber, th) = Self::new(model_definition)?;
+        let jh = thread::spawn(move || transcriber.run());
+        Ok((jh, th))
     }
 
     pub fn run(mut self) {
@@ -201,19 +198,19 @@ where
 
             let msl = self.common_model_params.max_sample_len;
 
-            //break Ok(match sample_format {
-            //    cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
-            //    cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
-            //    _ => continue,
-            //});
+            break Ok(match sample_format {
+                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
+                _ => continue,
+            });
         }
     }
 
@@ -259,16 +256,20 @@ pub struct TranscriberHandle {
     ctrl_tx: SyncSender<CtrlMsg>,
 }
 
+unsafe impl Send for TranscriberHandle {}
+
 impl TranscriberHandle {
     pub fn start(
         &self,
         mic_settings: MicSettings,
     ) -> Result<Receiver<Result<String, TranscriberError>>, StartError> {
         let (res_tx, res_rx) = sync_channel(0);
-        self.ctrl_tx.send(CtrlMsg::StartStream {
-            mic_settings,
-            res_ch: res_tx,
-        });
+        self.ctrl_tx
+            .send(CtrlMsg::StartStream {
+                mic_settings,
+                res_ch: res_tx,
+            })
+            .unwrap();
         res_rx.recv().unwrap()
     }
 }
