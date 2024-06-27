@@ -4,11 +4,12 @@ use cpal::{
     SampleRate, SupportedStreamConfigRange,
 };
 use thingbuf::recycling::WithCapacity;
+use tracing::{error, warn};
 
 use crate::{
     mic::MicSettings,
     model::{CommonModelParams, Model, ModelDefinition},
-    DType, StartError, Stream,
+    DType, StartError, TranscriberError,
 };
 
 use super::parse_data;
@@ -24,12 +25,16 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+struct TmpStream {
+    tx: SyncSender<()>,
+}
+
 type MicStream = Arc<Mutex<Option<cpal::Stream>>>;
 
 enum CtrlMsg {
     StartStream {
         mic_settings: MicSettings,
-        res_ch: SyncSender<Result<Receiver<String>, StartError>>,
+        res_ch: SyncSender<Result<Receiver<Result<String, TranscriberError>>, StartError>>,
     },
 }
 
@@ -70,14 +75,17 @@ where
         ))
     }
 
-    pub fn spawn<D>(model_definition: D) -> (JoinHandle<()>, TranscriberHandle)
+    pub fn spawn<D>(model_definition: D) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
     where
         D: ModelDefinition<Model = T>,
     {
+        //let (transcriber, th) = Self::new(model_definition)?;
+        //let jh = thread::spawn(move || transcriber.run());
+        //Ok((jh, th))
         todo!()
     }
 
-    pub async fn run(mut self) {
+    pub fn run(mut self) {
         while let Ok(command) = self.ctrl_rx.recv() {
             match command {
                 CtrlMsg::StartStream {
@@ -97,34 +105,51 @@ where
                         sync_channel(self.common_model_params.string_buffer);
 
                     match self.create_stream(mic_settings, data_tx, error_tx) {
+                        Err(err) => {
+                            if res_ch.try_send(Err(err)).is_err() {
+                                warn!("Failed to send Stream creation failure response, receiver closed.");
+                            };
+                            break;
+                        }
                         Ok(stream) => {
                             {
                                 let mut guard = self.stream.lock().unwrap_or_else(|e| {
+                                    error!("Ran into a poisoned Mutex when creating Stream, clearing the poison.");
                                     self.stream.clear_poison();
                                     e.into_inner()
                                 });
                                 *guard = Some(stream);
                                 if res_ch.try_send(Ok(string_rx)).is_err() {
+                                    warn!("Failed to send Stream creation success response, receiver closed.");
                                     *guard = None;
                                 };
-                            }
+                            };
 
                             while let Some(mut data) = data_rx.recv_ref() {
                                 let string = self.model.transcribe(data.deref_mut());
-                                if string_tx.send(string).is_err() {
-                                    todo!();
+                                if string_tx.send(Ok(string)).is_err() {
+                                    {
+                                        let mut guard =  self.stream.lock().unwrap_or_else(|e| {
+                                            error!("Ran into a poisoned Mutex when dropping the Stream on closed Reciever, clearing the poison.");
+                                            self.stream.clear_poison();
+                                            e.into_inner()
+                                        });
+                                        *guard = None;
+                                    };
                                     break;
-                                }
+                                };
                             }
-                        }
-                        Err(err) => {
-                            let _ = res_ch.try_send(Err(err));
-                            break;
+
+                            if let Ok(err) = error_rx.recv() {
+                                if string_tx.send(Err(err.into())).is_err() {
+                                    warn!("Failed to send stream error, receiver closed");
+                                };
+                            };
                         }
                     }
                     self.model.clear_context();
                 }
-            }
+            };
         }
     }
 }
@@ -133,12 +158,8 @@ impl<T> Transcriber<T>
 where
     T: Model,
 {
-    fn transcribe(&mut self) -> String {
-        todo!()
-    }
-
     fn create_stream(
-        &mut self,
+        &self,
         mic_settings: MicSettings,
         data_tx: thingbuf::mpsc::blocking::Sender<Vec<T::Data>, WithCapacity>,
         error_tx: SyncSender<cpal::StreamError>,
@@ -180,19 +201,19 @@ where
 
             let msl = self.common_model_params.max_sample_len;
 
-            break Ok(match sample_format {
-                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
-                _ => continue,
-            });
+            //break Ok(match sample_format {
+            //    cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
+            //    cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
+            //    _ => continue,
+            //});
         }
     }
 
@@ -236,4 +257,18 @@ where
 pub struct TranscriberHandle {
     stream: MicStream,
     ctrl_tx: SyncSender<CtrlMsg>,
+}
+
+impl TranscriberHandle {
+    pub fn start(
+        &self,
+        mic_settings: MicSettings,
+    ) -> Result<Receiver<Result<String, TranscriberError>>, StartError> {
+        let (res_tx, res_rx) = sync_channel(0);
+        self.ctrl_tx.send(CtrlMsg::StartStream {
+            mic_settings,
+            res_ch: res_tx,
+        });
+        res_rx.recv().unwrap()
+    }
 }

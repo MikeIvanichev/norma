@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Model, ModelDefinition};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct DummyDef {}
 
 impl ModelDefinition for DummyDef {
@@ -34,7 +34,7 @@ impl Model for Dummy {
 
     const SAMPLE_RATE: u32 = 16_000;
 
-    fn transcribe(&mut self, data: &mut [Self::Data]) -> String {
+    fn transcribe(&mut self, data: &mut Vec<Self::Data>) -> String {
         format!("The len of this sample is: {}", data.len())
     }
 

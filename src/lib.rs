@@ -9,7 +9,10 @@ use std::{
     marker::PhantomData,
     mem,
     ops::DerefMut,
-    sync::{mpsc::channel, Arc},
+    sync::{
+        mpsc::{channel, SyncSender},
+        Arc,
+    },
     thread::{self, JoinHandle},
 };
 
@@ -18,7 +21,7 @@ use crate::dtype::DType;
 use candle_core::WithDType;
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleRate, Stream, SupportedStreamConfigRange,
+    SampleRate, SupportedStreamConfigRange,
 };
 use mic::MicSettings;
 use model::{dummy::DummyDef, CommonModelParams, Model, ModelDefinition, ModelInput};
@@ -69,6 +72,7 @@ macro_rules! parse_data {
 }
 
 pub(crate) use parse_data;
+use tracing::warn;
 
 struct Packer<T, D> {
     buff: Vec<D>,
@@ -90,10 +94,14 @@ impl<T, D> Packer<T, D> {
     }
 
     pub fn flush(&mut self) {
-        if let Ok(mut send_ref) = self.tx.try_send_ref() {
-            mem::swap(send_ref.deref_mut(), &mut self.buff);
-        } else {
-            self.buff.clear();
+        match self.tx.try_send_ref() {
+            Ok(mut send_ref) => {
+                mem::swap(send_ref.deref_mut(), &mut self.buff);
+            }
+            Err(err) => {
+                warn!("Failed to send data to the Transcriber, {err}.");
+                self.buff.clear();
+            }
         };
     }
 }
@@ -125,9 +133,7 @@ pub enum StartError {
 }
 
 #[derive(Debug, Error)]
-pub enum ReceiveError {
-    #[error("The stream is not currently running, call start to start it")]
-    TranscriberIdle,
+pub enum TranscriberError {
     #[error(transparent)]
-    TranscriptionError(#[from] cpal::StreamError),
+    StreamError(#[from] cpal::StreamError),
 }
