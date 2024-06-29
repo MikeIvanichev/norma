@@ -8,10 +8,8 @@ use tracing::{error, warn};
 use crate::{
     mic::MicSettings,
     model::{CommonModelParams, Model, ModelDefinition},
-    DType, StartError, StopError,
+    parse_data, DType, StartError, StopError,
 };
-
-use super::parse_data;
 
 use std::{
     cmp::Ordering::{self, Equal},
@@ -52,7 +50,7 @@ where
 
         let common_model_params = model_definition.common_params();
 
-        let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
+        let (ctrl_tx, ctrl_rx) = mpsc::channel(1);
 
         let model: T = model_definition.try_into()?;
 
@@ -278,6 +276,39 @@ impl TranscriberHandle {
                 .map_err(|_| StartError::TranscriberDown)?;
 
             Ok(res_rx.await.map_err(|_| StartError::TranscriberDown)??)
+        } else {
+            Err(StartError::TranscriberRunning)
+        }
+    }
+
+    pub fn start_blocking(
+        &self,
+        mic_settings: MicSettings,
+    ) -> Result<mpsc::Receiver<String>, StartError> {
+        let is_down = self
+            .stream_state
+            .lock()
+            .unwrap_or_else(|e| {
+                error!(
+                "Ran into a poisoned Mutex when attempting to start a Stream, clearing the poison."
+            );
+                self.stream_state.clear_poison();
+                let mut guard = e.into_inner();
+                *guard = None;
+                guard
+            })
+            .is_none();
+
+        if is_down {
+            let (res_tx, res_rx) = oneshot::channel();
+
+            self.ctrl_tx
+                .blocking_send((mic_settings, res_tx))
+                .map_err(|_| StartError::TranscriberDown)?;
+
+            Ok(res_rx
+                .blocking_recv()
+                .map_err(|_| StartError::TranscriberDown)??)
         } else {
             Err(StartError::TranscriberRunning)
         }
