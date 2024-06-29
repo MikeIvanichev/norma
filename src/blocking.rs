@@ -1,6 +1,5 @@
 use cpal::{
-    default_host,
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait},
     SampleRate, SupportedStreamConfigRange,
 };
 use thingbuf::recycling::WithCapacity;
@@ -9,37 +8,32 @@ use tracing::{error, warn};
 use crate::{
     mic::MicSettings,
     model::{CommonModelParams, Model, ModelDefinition},
-    DType, StartError, TranscriberError,
+    DType, StartError, StopError,
 };
 
 use super::parse_data;
 
 use std::{
     cmp::Ordering::{self, Equal},
-    ops::DerefMut,
-    string,
-    sync::{
-        mpsc::{channel, sync_channel, Receiver, Sender, SyncSender},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
 
-type MicStream = Arc<Mutex<Option<cpal::Stream>>>;
+use tokio::sync::{mpsc, oneshot};
 
-enum CtrlMsg {
-    StartStream {
-        mic_settings: MicSettings,
-        res_ch: SyncSender<Result<Receiver<Result<String, TranscriberError>>, StartError>>,
-    },
-}
+type MicStreamState = Arc<Mutex<Option<cpal::Stream>>>;
+
+type StartStream = (
+    MicSettings,
+    oneshot::Sender<Result<mpsc::Receiver<String>, StartError>>,
+);
 
 pub struct Transcriber<T>
 where
     T: Model,
 {
-    stream: MicStream,
-    ctrl_rx: Receiver<CtrlMsg>,
+    stream_state: MicStreamState,
+    ctrl_rx: mpsc::Receiver<StartStream>,
     common_model_params: CommonModelParams,
     model: T,
 }
@@ -58,18 +52,21 @@ where
 
         let common_model_params = model_definition.common_params();
 
-        let (ctrl_tx, ctrl_rx) = sync_channel(0);
+        let (ctrl_tx, ctrl_rx) = mpsc::channel(0);
 
         let model: T = model_definition.try_into()?;
 
         Ok((
             Self {
-                stream: Arc::clone(&stream),
+                stream_state: Arc::clone(&stream),
                 ctrl_rx,
                 model,
                 common_model_params,
             },
-            TranscriberHandle { stream, ctrl_tx },
+            TranscriberHandle {
+                stream_state: stream,
+                ctrl_tx,
+            },
         ))
     }
 
@@ -83,70 +80,66 @@ where
     }
 
     pub fn run(mut self) {
-        while let Ok(command) = self.ctrl_rx.recv() {
-            match command {
-                CtrlMsg::StartStream {
-                    mic_settings,
-                    res_ch,
-                } => {
-                    let recycle = thingbuf::recycling::WithCapacity::new()
-                        .with_min_capacity(self.common_model_params.max_sample_len)
-                        .with_max_capacity(self.common_model_params.max_sample_len);
-                    let (data_tx, data_rx) =
-                        thingbuf::mpsc::blocking::with_recycle::<Vec<T::Data>, _>(
-                            self.common_model_params.data_buffer,
-                            recycle,
-                        );
-                    let (error_tx, error_rx) = sync_channel(1);
-                    let (string_tx, string_rx) =
-                        sync_channel(self.common_model_params.string_buffer);
+        while let Some((mic_settings, res_ch)) = self.ctrl_rx.blocking_recv() {
+            let recycle = thingbuf::recycling::WithCapacity::new()
+                .with_min_capacity(self.common_model_params.max_sample_len)
+                .with_max_capacity(self.common_model_params.max_sample_len);
+            let (data_tx, data_rx) = thingbuf::mpsc::blocking::with_recycle::<Vec<T::Data>, _>(
+                self.common_model_params.data_buffer,
+                recycle,
+            );
+            let (string_tx, string_rx) = mpsc::channel(self.common_model_params.string_buffer);
 
-                    match self.create_stream(mic_settings, data_tx, error_tx) {
-                        Err(err) => {
-                            if res_ch.try_send(Err(err)).is_err() {
-                                warn!("Failed to send Stream creation failure response, receiver closed.");
-                            };
-                            break;
-                        }
-                        Ok(stream) => {
-                            {
-                                let mut guard = self.stream.lock().unwrap_or_else(|e| {
+            match self.create_stream(mic_settings, data_tx) {
+                Err(err) => {
+                    if res_ch.send(Err(err)).is_err() {
+                        warn!("Failed to send Stream creation failure response, receiver closed.");
+                    };
+                    break;
+                }
+                Ok(stream) => {
+                    {
+                        let mut guard = self.stream_state.lock().unwrap_or_else(|e| {
                                     error!("Ran into a poisoned Mutex when creating Stream, clearing the poison.");
-                                    self.stream.clear_poison();
+                                    self.stream_state.clear_poison();
                                     e.into_inner()
                                 });
-                                *guard = Some(stream);
-                                if res_ch.try_send(Ok(string_rx)).is_err() {
-                                    warn!("Failed to send Stream creation success response, receiver closed.");
-                                    *guard = None;
-                                };
-                            };
 
-                            while let Some(mut data) = data_rx.recv_ref() {
-                                let string = self.model.transcribe(data.deref_mut());
-                                if string_tx.send(Ok(string)).is_err() {
-                                    {
-                                        let mut guard =  self.stream.lock().unwrap_or_else(|e| {
+                        if res_ch.send(Ok(string_rx)).is_ok() {
+                            *guard = Some(stream);
+                        } else {
+                            warn!(
+                                "Failed to send Stream creation success response, receiver closed."
+                            );
+                            break;
+                        };
+                    };
+
+                    while let Ok((_, res_ch)) = self.ctrl_rx.try_recv() {
+                        if res_ch.send(Err(StartError::TranscriberRunning)).is_err() {
+                            warn!(
+                                "Failed to send Stream creation failure response, receiver closed."
+                            );
+                        };
+                    }
+
+                    while let Some(mut data) = data_rx.recv_ref() {
+                        let string = self.model.transcribe(&mut *data);
+                        if string_tx.blocking_send(string).is_err() {
+                            {
+                                let mut guard =  self.stream_state.lock().unwrap_or_else(|e| {
                                             error!("Ran into a poisoned Mutex when dropping the Stream on closed Reciever, clearing the poison.");
-                                            self.stream.clear_poison();
+                                            self.stream_state.clear_poison();
                                             e.into_inner()
                                         });
-                                        *guard = None;
-                                    };
-                                    break;
-                                };
-                            }
-
-                            if let Ok(err) = error_rx.recv() {
-                                if string_tx.send(Err(err.into())).is_err() {
-                                    warn!("Failed to send stream error, receiver closed");
-                                };
+                                *guard = None;
                             };
-                        }
+                            break;
+                        };
                     }
-                    self.model.clear_context();
                 }
-            };
+            }
+            self.model.clear_context();
         }
     }
 }
@@ -159,7 +152,6 @@ where
         &self,
         mic_settings: MicSettings,
         data_tx: thingbuf::mpsc::blocking::Sender<Vec<T::Data>, WithCapacity>,
-        error_tx: SyncSender<cpal::StreamError>,
     ) -> Result<cpal::Stream, StartError> {
         let host = cpal::default_host();
 
@@ -199,16 +191,16 @@ where
             let msl = self.common_model_params.max_sample_len;
 
             break Ok(match sample_format {
-                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, error_tx, msl),
-                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, error_tx, msl),
+                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, msl),
+                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, msl),
+                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, msl),
+                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, msl),
+                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, msl),
+                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, msl),
+                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, msl),
+                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, msl),
+                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, msl),
+                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, msl),
                 _ => continue,
             });
         }
@@ -252,24 +244,59 @@ where
 }
 
 pub struct TranscriberHandle {
-    stream: MicStream,
-    ctrl_tx: SyncSender<CtrlMsg>,
+    stream_state: MicStreamState,
+    ctrl_tx: mpsc::Sender<StartStream>,
 }
 
 unsafe impl Send for TranscriberHandle {}
 
 impl TranscriberHandle {
-    pub fn start(
+    pub async fn start(
         &self,
         mic_settings: MicSettings,
-    ) -> Result<Receiver<Result<String, TranscriberError>>, StartError> {
-        let (res_tx, res_rx) = sync_channel(0);
-        self.ctrl_tx
-            .send(CtrlMsg::StartStream {
-                mic_settings,
-                res_ch: res_tx,
+    ) -> Result<mpsc::Receiver<String>, StartError> {
+        let is_down = self
+            .stream_state
+            .lock()
+            .unwrap_or_else(|e| {
+                error!(
+                "Ran into a poisoned Mutex when attempting to start a Stream, clearing the poison."
+            );
+                self.stream_state.clear_poison();
+                let mut guard = e.into_inner();
+                *guard = None;
+                guard
             })
-            .unwrap();
-        res_rx.recv().unwrap()
+            .is_none();
+
+        if is_down {
+            let (res_tx, res_rx) = oneshot::channel();
+
+            self.ctrl_tx
+                .send((mic_settings, res_tx))
+                .await
+                .map_err(|_| StartError::TranscriberDown)?;
+
+            Ok(res_rx.await.map_err(|_| StartError::TranscriberDown)??)
+        } else {
+            Err(StartError::TranscriberRunning)
+        }
+    }
+
+    pub fn stop(&self) -> Result<(), StopError> {
+        match self.stream_state.lock() {
+            Ok(mut guard) if guard.is_some() => {
+                *guard = None;
+                Ok(())
+            }
+            Ok(_) => Err(StopError::NoStreamRunning),
+            Err(err) => {
+                warn!("Ran into a poisoned Mutex when dropping the Stream from a TranscriberHandle, clearing the poison.");
+                self.stream_state.clear_poison();
+                let mut guard = err.into_inner();
+                *guard = None;
+                Ok(())
+            }
+        }
     }
 }

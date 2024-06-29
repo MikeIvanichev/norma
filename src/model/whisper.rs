@@ -1,19 +1,6 @@
-use candle_core::Tensor;
-use cpal::SizedSample;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
-pub struct WhisperSettings {
-    model: Model,
-    quantized: bool,
-    task: Task,
-}
-
-impl Into<Whisper> for WhisperSettings {
-    fn into(self) -> Whisper {
-        todo!()
-    }
-}
+use super::{CommonModelParams, ModelDefinition};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Device {
@@ -23,8 +10,8 @@ pub enum Device {
     Metal(usize),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
-pub enum Model {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+pub enum ModelType {
     Tiny,
     TinyEn,
     Base,
@@ -42,13 +29,61 @@ pub enum Model {
     DistilLargeV3,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Task {
     #[default]
     Transcribe,
     Translate,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct WhisperSettings {
+    model: ModelType,
+    quantized: bool,
+    task: Task,
+    device: Device,
+    max_sample_len: usize,
+    data_buffer: usize,
+    string_buffer: usize,
+    stride: usize,
+}
+
+impl ModelDefinition for WhisperSettings {
+    type Model = Whisper;
+
+    fn common_params(&self) -> CommonModelParams {
+        CommonModelParams {
+            max_sample_len: self.max_sample_len,
+            data_buffer: self.data_buffer,
+            string_buffer: self.string_buffer,
+        }
+    }
+}
+
+pub enum Error {}
+
+impl TryInto<Whisper> for WhisperSettings {
+    type Error = Error;
+
+    fn try_into(self) -> Result<Whisper, Self::Error> {
+        todo!()
+    }
+}
+
 // -------------------------------
 
-struct Whisper {}
+pub struct Whisper {}
+
+impl crate::model::Model for Whisper {
+    type Data = f32;
+
+    const SAMPLE_RATE: u32 = 16_000;
+
+    fn clear_context(&mut self) {
+        todo!()
+    }
+
+    fn transcribe(&mut self, data: &mut Vec<Self::Data>) -> String {
+        todo!()
+    }
+}

@@ -18,11 +18,10 @@ dasp_ring_buffer = "0.11.0"
 dasp_interpolate = { version = "0.11.0", features = ["sinc"] }
 thingbuf = "0.1.6"
 tracing = { version = "0.1.40", features = ["async-await"] }
-tokio = { version = "1.38.0", features = ["sync"], optional = true }
+tokio = { version = "1.38.0", features = ["sync"] }
 
 [features]
 default = []
-async = ["tokio"]
 #cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
 #cudnn = ["candle-core/cudnn", "candle-nn/cuda", "candle-transformers/cuda"]
 #metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]

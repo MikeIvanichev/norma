@@ -3,33 +3,16 @@ pub mod dtype;
 pub mod mic;
 pub mod model;
 
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    marker::PhantomData,
-    mem,
-    ops::DerefMut,
-    sync::{
-        mpsc::{channel, SyncSender},
-        Arc,
-    },
-    thread::{self, JoinHandle},
-};
+use std::mem;
 
 use crate::dtype::DType;
 
-use candle_core::WithDType;
-use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
-    SampleRate, SupportedStreamConfigRange,
-};
-use mic::MicSettings;
-use model::{dummy::DummyDef, CommonModelParams, Model, ModelDefinition, ModelInput};
-use thingbuf::{mpsc::blocking::SendRef, recycling::WithCapacity};
+use thingbuf::recycling::WithCapacity;
 use thiserror::Error;
 
 macro_rules! parse_data {
-    ($t:ty, $device:ident, $config:ident, $tx: ident, $error_tx: ident, $msl: ident) => {{
+    ($t:ty, $device:ident, $config:ident, $tx: ident, $msl: ident) => {{
+        use cpal::traits::StreamTrait;
         use dasp_frame::Frame;
         use dasp_signal::Signal;
 
@@ -62,7 +45,7 @@ macro_rules! parse_data {
                 packer.append(data);
             },
             move |err| {
-                let _ = $error_tx.send(err);
+                error! {"The mic error callback was called with: {:?}", err};
             },
             None,
         )?;
@@ -96,7 +79,7 @@ impl<T, D> Packer<T, D> {
     pub fn flush(&mut self) {
         match self.tx.try_send_ref() {
             Ok(mut send_ref) => {
-                mem::swap(send_ref.deref_mut(), &mut self.buff);
+                mem::swap(&mut *send_ref, &mut self.buff);
             }
             Err(err) => {
                 warn!("Failed to send data to the Transcriber, {err}.");
@@ -113,9 +96,17 @@ impl<T, D> Drop for Packer<T, D> {
 }
 
 #[derive(Debug, Error)]
+pub enum StopError {
+    #[error("No stream is currently running")]
+    NoStreamRunning,
+}
+
+#[derive(Debug, Error)]
 pub enum StartError {
-    #[error("The transcriber has paniced, call join() to see why")]
-    TranscriberPaniced,
+    #[error("The transcriber is down, it may have paniced, call join() to see why it's down")]
+    TranscriberDown,
+    #[error("The transcriber is already running stop it before starting again")]
+    TranscriberRunning,
     #[error("Failed to find an available input device")]
     DeviceError,
     #[error("Failed to find the selected device among the available devices")]
@@ -130,10 +121,4 @@ pub enum StartError {
     BuildStreamError(#[from] cpal::BuildStreamError),
     #[error(transparent)]
     PlayStreamError(#[from] cpal::PlayStreamError),
-}
-
-#[derive(Debug, Error)]
-pub enum TranscriberError {
-    #[error(transparent)]
-    StreamError(#[from] cpal::StreamError),
 }

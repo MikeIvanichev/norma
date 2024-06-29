@@ -1,6 +1,4 @@
-use std::time::Duration;
-
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::dtype::DType;
 
@@ -12,7 +10,7 @@ pub enum ModelInput<T> {
     ClearContext,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CommonModelParams {
     pub max_sample_len: usize,
     pub data_buffer: usize,
