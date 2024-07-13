@@ -5,7 +5,7 @@ use candle_nn::ops::softmax;
 use rand::distributions::Distribution;
 use strum::IntoEnumIterator;
 use tokenizers::Tokenizer;
-use tracing::{info, warn};
+use tracing::{info, instrument, trace, warn, Level};
 
 use crate::utils::SliceExt;
 use candle_transformers::models::whisper::{self as m, audio, Config};
@@ -45,6 +45,7 @@ impl crate::models::Model for Model {
 
     const SAMPLE_RATE: u32 = 16_000;
 
+    #[instrument(level = Level::DEBUG, skip(self, data), fields(data_len = data.len()), ret)]
     fn transcribe(&mut self, data: &mut Vec<Self::Data>, final_chunk: bool) -> Option<String> {
         if self.buf.is_empty() {
             mem::swap(&mut self.buf, data);
@@ -180,6 +181,7 @@ impl Model {
         let mut probs = Language::iter().zip(probs.iter()).collect::<Vec<_>>();
         probs.sort_by(|(_, p1), (_, p2)| p2.total_cmp(p1));
         let language = self.tokenizer.token_to_id(probs[0].0.token())?;
+        trace!(language = %probs[0].0, "Detected the language");
         Some(language)
     }
 
@@ -248,6 +250,7 @@ impl Model {
         }
     }
 
+    #[instrument(level = Level::TRACE, skip(audio_features, self))]
     fn decode(&mut self, audio_features: &Tensor, t: f64) -> Option<DecodingResult> {
         let mut sum_logprob = 0f64;
         let mut tokens = vec![self.sot_token];

@@ -1,6 +1,7 @@
 use rand::SeedableRng;
 use std::time::Duration;
 use strum::IntoEnumIterator;
+use tracing::{instrument, Level};
 
 use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
@@ -96,6 +97,7 @@ pub struct Definition {
 }
 
 impl Definition {
+    #[instrument(ret(level = Level::DEBUG))]
     pub fn new(model: ModelType, device: SelectedDevice, task: Task) -> Self {
         Self {
             model,
@@ -107,6 +109,7 @@ impl Definition {
         }
     }
 
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_responsiveness(&mut self, period: Duration) -> Result<(), super::Error> {
         let period = period.as_millis();
         if (1_000..=30_000).contains(&period) {
@@ -117,6 +120,7 @@ impl Definition {
         }
     }
 
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         if size > 1 {
             self.data_buffer_size = size;
@@ -126,6 +130,7 @@ impl Definition {
         }
     }
 
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         if size > 1 {
             self.string_buffer_size = size;
@@ -149,6 +154,7 @@ impl ModelDefinition for Definition {
         }
     }
 
+    #[instrument(level = Level::DEBUG, err(Display))]
     async fn try_to_model(self) -> Result<Self::Model, Self::Error> {
         let device = match self.device {
             SelectedDevice::Cpu => Device::Cpu,
@@ -296,6 +302,7 @@ impl ModelDefinition for Definition {
         })
     }
 
+    #[instrument(level = Level::DEBUG, err(Display))]
     fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error> {
         let device = match self.device {
             SelectedDevice::Cpu => Device::Cpu,
