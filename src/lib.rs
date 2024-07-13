@@ -226,13 +226,13 @@ where
 
             let (tmp_tx, tmp_rx) = oneshot::channel();
 
-            thread::spawn(move || {
+            let _jh = jod_thread::spawn(move || {
                 match Self::create_stream(
                     &mic_settings,
                     &data_tx,
                     self.common_model_params.max_chunk_len,
                 ) {
-                    Ok(stream) => {
+                    Ok(_stream) => {
                         let (tx, rx) = oneshot::channel();
                         let _ = tmp_tx.send(Ok(tx));
                         let _ = rx.blocking_recv();
