@@ -84,14 +84,14 @@ impl crate::models::Model for Model {
                 continue;
             };
 
-            for tokens in dr.tokens.inclusive_boxed_by(|token| {
-                token > &self.no_timestamps_token || token == &self.eot_token
+            for tokens in dr.tokens.inclusive_boxed_by(|&token| {
+                token > self.no_timestamps_token || token == self.eot_token
             }) {
                 let s_timestamp = tokens[0] - self.no_timestamps_token - 1;
                 //Safe to unwrap, as we know the slice is never empty
-                let e_timestamp_token = tokens.last().unwrap();
+                let &e_timestamp_token = tokens.last().unwrap();
 
-                if e_timestamp_token == &self.eot_token {
+                if e_timestamp_token == self.eot_token {
                     if s_timestamp == 0 || final_chunk {
                         if slice_len == m::N_SAMPLES || final_chunk {
                             self.buf.drain(..slice_len);
@@ -220,7 +220,7 @@ impl Model {
         let sl_token = tokens.iter().nth_back(1);
 
         if l_token > &self.no_timestamps_token {
-            if sl_token.is_some_and(|token| token >= &self.eot_token) {
+            if sl_token.is_some_and(|&token| token >= self.eot_token) {
                 return self.supress_timestamps(&logits);
             }
             return self.supress_non_timestamps(&logits, last_timestep);
@@ -343,6 +343,14 @@ impl Model {
         }
 
         let avg_logprob = sum_logprob / tokens.len() as f64;
+
+        while tokens
+            .iter()
+            .nth_back(1)
+            .is_some_and(|&t| t > self.no_timestamps_token)
+        {
+            tokens.remove(tokens.len() - 2);
+        }
 
         Some(DecodingResult {
             tokens,
