@@ -12,14 +12,14 @@ use std::{
 };
 
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
+    traits::{DeviceTrait, HostTrait},
     SampleRate, SupportedStreamConfigRange,
 };
 use mic::Settings;
 use models::{CommonModelParams, Model, ModelDefinition};
 use thingbuf::recycling::WithCapacity;
 use thiserror::Error;
-use tracing::{error, warn};
+use tracing::{error, info, instrument, warn, Level};
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -28,6 +28,7 @@ macro_rules! parse_data {
         use dasp_frame::Frame;
         use dasp_signal::Signal;
         use tracing::error;
+        use cpal::traits::{DeviceTrait, StreamTrait};
 
         let mut packer = crate::Packer {
             buf: Vec::with_capacity($msl),
@@ -48,7 +49,7 @@ macro_rules! parse_data {
                     packer.append(data);
                 },
                 move |err| {
-                    error! {"The mic error callback was called with: {:?}", err};
+                    error! {%err, "The mic error callback was called"};
                 },
                 None,
             )?
@@ -77,7 +78,7 @@ macro_rules! parse_data {
                     packer.append(data);
                 },
                 move |err| {
-                    error! {"The mic error callback was called with: {:?}", err};
+                    error! {%err, "The mic error callback was called"};
                 },
                 None,
             )?
@@ -115,7 +116,7 @@ impl<T, D> Packer<T, D> {
                 mem::swap(&mut *send_ref, &mut self.buf);
             }
             Err(err) => {
-                warn!("Failed to send data to the Transcriber, {err}.");
+                warn!(%err, "Failed to send data to the Transcriber");
                 self.buf.clear();
             }
         };
@@ -124,6 +125,7 @@ impl<T, D> Packer<T, D> {
 
 impl<T, D> Drop for Packer<T, D> {
     fn drop(&mut self) {
+        info!("Dropping the Packer");
         let _ = self.buf.pop();
         self.flush();
     }
@@ -178,7 +180,8 @@ impl<T> Transcriber<T>
 where
     T: Model,
 {
-    pub fn new<D>(model_definition: D) -> Result<(Self, TranscriberHandle), D::Error>
+    #[instrument(err(Display, level = Level::DEBUG))]
+    pub fn blocking_new<D>(model_definition: D) -> Result<(Self, TranscriberHandle), D::Error>
     where
         D: ModelDefinition<Model = T>,
     {
@@ -204,15 +207,58 @@ where
         ))
     }
 
-    pub fn spawn<D>(model_definition: D) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
+    #[instrument(err(Display, level = Level::DEBUG))]
+    pub async fn new<D>(model_definition: D) -> Result<(Self, TranscriberHandle), D::Error>
     where
         D: ModelDefinition<Model = T>,
     {
-        let (transcriber, th) = Self::new(model_definition)?;
+        let stream = Arc::new(Mutex::new(None));
+
+        let common_model_params = model_definition.common_params();
+
+        let (ctrl_tx, ctrl_rx) = mpsc::channel(1);
+
+        let model: T = model_definition.try_to_model().await?;
+
+        Ok((
+            Self {
+                stream_state: Arc::clone(&stream),
+                ctrl_rx,
+                model,
+                common_model_params,
+            },
+            TranscriberHandle {
+                stream_state: stream,
+                ctrl_tx,
+            },
+        ))
+    }
+
+    #[instrument(err(Display, level = Level::DEBUG))]
+    pub fn blocking_spawn<D>(
+        model_definition: D,
+    ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
+    where
+        D: ModelDefinition<Model = T>,
+    {
+        let (transcriber, th) = Self::blocking_new(model_definition)?;
         let jh = thread::spawn(move || transcriber.run());
         Ok((jh, th))
     }
 
+    #[instrument(err(Display, level = Level::DEBUG))]
+    pub async fn spawn<D>(
+        model_definition: D,
+    ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
+    where
+        D: ModelDefinition<Model = T>,
+    {
+        let (transcriber, th) = Self::new(model_definition).await?;
+        let jh = thread::spawn(move || transcriber.run());
+        Ok((jh, th))
+    }
+
+    #[instrument(skip_all)]
     pub fn run(mut self) {
         while let Some((mic_settings, res_ch)) = self.ctrl_rx.blocking_recv() {
             let recycle = thingbuf::recycling::WithCapacity::new()
@@ -304,10 +350,11 @@ impl<T> Transcriber<T>
 where
     T: Model,
 {
+    #[instrument(level = Level::DEBUG, skip(data_tx), err(Display, level = Level::TRACE))]
     fn create_stream(
         mic_settings: &Settings,
         data_tx: &thingbuf::mpsc::blocking::Sender<Vec<T::Data>, WithCapacity>,
-        msl: usize,
+        max_chunk_len: usize,
     ) -> Result<cpal::Stream, StartError> {
         let host = cpal::default_host();
 
@@ -345,21 +392,22 @@ where
                 .config();
 
             break Ok(match sample_format {
-                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, msl),
-                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, msl),
-                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, msl),
-                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, msl),
-                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, msl),
-                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, msl),
-                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, msl),
-                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, msl),
-                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, msl),
-                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, msl),
+                cpal::SampleFormat::I8 => parse_data!(i8, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::I16 => parse_data!(i16, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::I32 => parse_data!(i32, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::I64 => parse_data!(i64, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::U8 => parse_data!(u8, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::U16 => parse_data!(u16, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::U32 => parse_data!(u32, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::U64 => parse_data!(u64, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::F32 => parse_data!(f32, device, config, data_tx, max_chunk_len),
+                cpal::SampleFormat::F64 => parse_data!(f64, device, config, data_tx, max_chunk_len),
                 _ => continue,
             });
         }
     }
 
+    #[instrument(level = Level::TRACE, ret)]
     fn cmp_mic_config(
         lhs: &SupportedStreamConfigRange,
         rhs: &SupportedStreamConfigRange,
@@ -404,12 +452,14 @@ where
 }
 
 #[must_use = "The transcriber will terminate if this is droped"]
+#[derive(Debug, Clone)]
 pub struct TranscriberHandle {
     stream_state: MicStreamState,
     ctrl_tx: mpsc::Sender<StartStream>,
 }
 
 impl TranscriberHandle {
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub async fn start(
         &self,
         mic_settings: Settings,
@@ -442,7 +492,8 @@ impl TranscriberHandle {
         }
     }
 
-    pub fn start_blocking(
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
+    pub fn blocking_start(
         &self,
         mic_settings: Settings,
     ) -> Result<mpsc::Receiver<String>, StartError> {
@@ -475,6 +526,7 @@ impl TranscriberHandle {
         }
     }
 
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn stop(&self) -> Result<(), StopError> {
         match self.stream_state.lock() {
             Ok(mut guard) if guard.is_some() => {

@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::{fmt::Debug, future::Future};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ pub struct CommonModelParams {
     pub(crate) string_buffer_size: usize,
 }
 
-pub trait ModelDefinition: Serialize + DeserializeOwned + PartialEq + Sync + Send {
+pub trait ModelDefinition: Debug + Serialize + DeserializeOwned + PartialEq + Sync + Send {
     type Model;
     type Error: std::error::Error;
 
