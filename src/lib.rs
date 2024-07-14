@@ -454,7 +454,7 @@ pub struct TranscriberHandle {
 }
 
 impl TranscriberHandle {
-    #[instrument(err(Display, level = Level::DEBUG))]
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub async fn start(
         &self,
         mic_settings: Settings,
@@ -487,7 +487,7 @@ impl TranscriberHandle {
         }
     }
 
-    #[instrument(err(Display, level = Level::DEBUG))]
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn blocking_start(
         &self,
         mic_settings: Settings,
@@ -521,7 +521,7 @@ impl TranscriberHandle {
         }
     }
 
-    #[instrument(err(Display, level = Level::DEBUG))]
+    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn stop(&self) -> Result<(), StopError> {
         match self.stream_state.lock() {
             Ok(mut guard) if guard.is_some() => {
