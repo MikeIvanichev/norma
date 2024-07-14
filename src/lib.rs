@@ -6,6 +6,7 @@ pub(crate) mod utils;
 
 use std::{
     cmp::Ordering::{self, Equal},
+    fmt::Debug,
     mem,
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
@@ -183,11 +184,11 @@ where
     #[instrument(err(Display, level = Level::DEBUG))]
     pub fn blocking_new<D>(model_definition: D) -> Result<(Self, TranscriberHandle), D::Error>
     where
-        D: ModelDefinition<Model = T>,
+        D: ModelDefinition<Model = T> + Debug,
     {
         let stream = Arc::new(Mutex::new(None));
 
-        let common_model_params = model_definition.common_params();
+        let common_model_params = *model_definition.common_params();
 
         let (ctrl_tx, ctrl_rx) = mpsc::channel(1);
 
@@ -210,11 +211,11 @@ where
     #[instrument(err(Display, level = Level::DEBUG))]
     pub async fn new<D>(model_definition: D) -> Result<(Self, TranscriberHandle), D::Error>
     where
-        D: ModelDefinition<Model = T>,
+        D: ModelDefinition<Model = T> + Debug,
     {
         let stream = Arc::new(Mutex::new(None));
 
-        let common_model_params = model_definition.common_params();
+        let common_model_params = *model_definition.common_params();
 
         let (ctrl_tx, ctrl_rx) = mpsc::channel(1);
 
@@ -239,7 +240,7 @@ where
         model_definition: D,
     ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
     where
-        D: ModelDefinition<Model = T>,
+        D: ModelDefinition<Model = T> + Debug,
     {
         let (transcriber, th) = Self::blocking_new(model_definition)?;
         let jh = thread::spawn(move || transcriber.run());
@@ -251,7 +252,7 @@ where
         model_definition: D,
     ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
     where
-        D: ModelDefinition<Model = T>,
+        D: ModelDefinition<Model = T> + Debug,
     {
         let (transcriber, th) = Self::new(model_definition).await?;
         let jh = thread::spawn(move || transcriber.run());
@@ -262,13 +263,14 @@ where
     pub fn run(mut self) {
         while let Some((mic_settings, res_ch)) = self.ctrl_rx.blocking_recv() {
             let recycle = thingbuf::recycling::WithCapacity::new()
-                .with_min_capacity(self.common_model_params.max_chunk_len)
-                .with_max_capacity(self.common_model_params.max_chunk_len);
+                .with_min_capacity(self.common_model_params.max_chunk_len())
+                .with_max_capacity(self.common_model_params.max_chunk_len());
             let (data_tx, data_rx) = thingbuf::mpsc::blocking::with_recycle::<Vec<T::Data>, _>(
-                self.common_model_params.data_buffer_size,
+                self.common_model_params.data_buffer_size(),
                 recycle,
             );
-            let (string_tx, string_rx) = mpsc::channel(self.common_model_params.string_buffer_size);
+            let (string_tx, string_rx) =
+                mpsc::channel(self.common_model_params.string_buffer_size());
 
             let (tmp_tx, tmp_rx) = oneshot::channel();
 
@@ -276,7 +278,7 @@ where
                 match Self::create_stream(
                     &mic_settings,
                     &data_tx,
-                    self.common_model_params.max_chunk_len,
+                    self.common_model_params.max_chunk_len(),
                 ) {
                     Ok(_stream) => {
                         let (tx, rx) = oneshot::channel();

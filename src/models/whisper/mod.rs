@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 
+use super::CMPError;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum VocabVersion {
@@ -43,10 +45,8 @@ pub enum Error {
     MelBins(usize),
     #[error("The respnsivness must be over 1 second and under 30")]
     Respnsivness,
-    #[error("The Data buffer size must be at least 2")]
-    DataBufSize,
-    #[error("The String buffer size must be at least 2")]
-    StringBufSize,
+    #[error(transparent)]
+    CMPError(#[from] CMPError),
 }
 
 fn token_id(tokenizer: &Tokenizer, token: &str) -> Result<u32, Error> {

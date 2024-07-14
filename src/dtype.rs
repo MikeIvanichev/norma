@@ -1,10 +1,16 @@
 use dasp_sample::Duplex;
 use std::fmt::Debug;
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+use sealed::Sealed;
+
 macro_rules! dtype {
     ($([$dtype:expr, $sample:expr] => $t:ty),+, _ => [$($it:ty),* $(,)?]  $(,)?) => {
 
-        pub trait DType: cpal::SizedSample + dasp_frame::Frame + Send + Sync + Debug $(+Duplex<$it>)+ $(+Duplex<$t>)+ + 'static{
+        pub trait DType: Sealed + cpal::SizedSample + dasp_frame::Frame + Send + Sync + Debug $(+Duplex<$it>)+ $(+Duplex<$t>)+ + 'static{
             fn to_dtype() -> candle_core::DType;
             fn to_sample_fromat() -> cpal::SampleFormat;
         }
@@ -19,6 +25,8 @@ macro_rules! dtype {
                 $sample
             }
         }
+
+        impl Sealed for $t {}
         )+
     };
 }

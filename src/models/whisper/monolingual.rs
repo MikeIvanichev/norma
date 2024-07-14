@@ -101,10 +101,7 @@ impl ModelType {
 pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
-    // --- Common Params ---
-    max_chunk_len: usize,
-    data_buffer_size: usize,
-    string_buffer_size: usize,
+    common_params: CommonModelParams,
 }
 
 impl Definition {
@@ -113,9 +110,7 @@ impl Definition {
         Self {
             model,
             device,
-            max_chunk_len: m::SAMPLE_RATE * 25,
-            data_buffer_size: 3,
-            string_buffer_size: 3,
+            common_params: CommonModelParams::new(m::SAMPLE_RATE * 25, 3, 3).unwrap(),
         }
     }
 
@@ -123,7 +118,8 @@ impl Definition {
     pub fn set_responsiveness(&mut self, period: Duration) -> Result<(), super::Error> {
         let period = period.as_millis();
         if (1_000..=30_000).contains(&period) {
-            self.max_chunk_len = (m::SAMPLE_RATE * period as usize) / 1000;
+            self.common_params
+                .set_max_chunk_len((m::SAMPLE_RATE * period as usize) / 1000);
             Ok(())
         } else {
             Err(super::Error::Respnsivness)
@@ -132,22 +128,14 @@ impl Definition {
 
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        if size > 1 {
-            self.data_buffer_size = size;
-            Ok(())
-        } else {
-            Err(super::Error::DataBufSize)
-        }
+        self.common_params.set_data_buffer_size(size)?;
+        Ok(())
     }
 
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        if size > 1 {
-            self.string_buffer_size = size;
-            Ok(())
-        } else {
-            Err(super::Error::StringBufSize)
-        }
+        self.common_params.set_string_buffer_size(size)?;
+        Ok(())
     }
 }
 
@@ -156,12 +144,8 @@ impl ModelDefinition for Definition {
 
     type Error = super::Error;
 
-    fn common_params(&self) -> CommonModelParams {
-        CommonModelParams {
-            max_chunk_len: self.max_chunk_len,
-            data_buffer_size: self.data_buffer_size,
-            string_buffer_size: self.string_buffer_size,
-        }
+    fn common_params(&self) -> &CommonModelParams {
+        &self.common_params
     }
 
     #[instrument(level = Level::DEBUG, err(Display))]
@@ -283,7 +267,7 @@ impl ModelDefinition for Definition {
 
         Ok(Self::Model {
             model,
-            buf: Vec::with_capacity(self.max_chunk_len),
+            buf: Vec::with_capacity(self.common_params.max_chunk_len()),
             config,
             device,
             mel_filters,
@@ -421,7 +405,7 @@ impl ModelDefinition for Definition {
 
         Ok(Self::Model {
             model,
-            buf: Vec::with_capacity(self.max_chunk_len),
+            buf: Vec::with_capacity(self.common_params.max_chunk_len()),
             config,
             device,
             mel_filters,
