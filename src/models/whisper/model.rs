@@ -59,7 +59,7 @@ impl crate::models::Model for Model {
             let slice_len = self.buf.len().min(m::N_SAMPLES);
             let data_slice = &self.buf[..slice_len];
 
-            let _span = debug_span!("Transcribing slice", slice_len).entered();
+            let _span = debug_span!("Transcribe slice", slice_len).entered();
 
             let mel = audio::pcm_to_mel(&self.config, data_slice, &self.mel_filters);
             let mel_len = mel.len();
@@ -97,16 +97,16 @@ impl crate::models::Model for Model {
                 if e_timestamp_token == self.eot_token {
                     if s_timestamp == 0 || final_chunk {
                         if slice_len == m::N_SAMPLES || final_chunk {
+                            self.buf.drain(..slice_len);
                             debug!(
                                 num_tokens_decoded = dr.tokens.len(),
-                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                num_tokens_retained = 0,
                                 "Transcribed all remaining data"
                             );
-                            self.buf.drain(..slice_len);
                         } else {
                             debug!(
                                 num_tokens_decoded = dr.tokens.len(),
-                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                num_tokens_retained = tokens.len(),
                                 "Transcribed, wating for more data"
                             );
                             break 'new_chunk;
@@ -115,17 +115,19 @@ impl crate::models::Model for Model {
                         let pre_drain_len = self.buf.len();
                         self.buf
                             .drain(..(s_timestamp as usize * 320).min(slice_len));
+
                         if pre_drain_len > slice_len {
                             debug!(
                                 num_tokens_decoded = dr.tokens.len(),
-                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                num_tokens_retained = tokens.len(),
                                 "Transcribed, getting a new slice"
                             );
                             break;
                         }
+
                         debug!(
                             num_tokens_decoded = dr.tokens.len(),
-                            num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                            num_tokens_retained = tokens.len(),
                             "Transcribed, wating for more data"
                         );
                         break 'new_chunk;
@@ -274,7 +276,6 @@ impl Model {
         }
     }
 
-    #[instrument(level = Level::TRACE, skip_all, fields(temperature = t))]
     fn decode(&mut self, audio_features: &Tensor, t: f64) -> Option<DecodingResult> {
         let mut sum_logprob = 0f64;
         let mut tokens = vec![self.sot_token];
