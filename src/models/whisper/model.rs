@@ -5,7 +5,7 @@ use candle_nn::ops::softmax;
 use rand::distributions::Distribution;
 use strum::IntoEnumIterator;
 use tokenizers::Tokenizer;
-use tracing::{debug, instrument, trace, warn, Level};
+use tracing::{debug, debug_span, instrument, trace, warn, Level};
 
 use crate::utils::SliceExt;
 use candle_transformers::models::whisper::{self as m, audio, Config};
@@ -45,7 +45,7 @@ impl crate::models::Model for Model {
 
     const SAMPLE_RATE: u32 = 16_000;
 
-    #[instrument(skip(self, data), fields(input_data_len = data.len(), self_buf_len = self.buf.len()), ret(level = Level::DEBUG))]
+    #[instrument(skip(self, data), fields(input_data_len = data.len(), buf_len = self.buf.len()))]
     fn transcribe(&mut self, data: &mut Vec<Self::Data>, final_chunk: bool) -> Option<String> {
         if self.buf.is_empty() {
             mem::swap(&mut self.buf, data);
@@ -58,6 +58,8 @@ impl crate::models::Model for Model {
         'new_chunk: while !self.buf.is_empty() {
             let slice_len = self.buf.len().min(m::N_SAMPLES);
             let data_slice = &self.buf[..slice_len];
+
+            let _span = debug_span!("Transcribing slice", slice_len).entered();
 
             let mel = audio::pcm_to_mel(&self.config, data_slice, &self.mel_filters);
             let mel_len = mel.len();
@@ -95,8 +97,18 @@ impl crate::models::Model for Model {
                 if e_timestamp_token == self.eot_token {
                     if s_timestamp == 0 || final_chunk {
                         if slice_len == m::N_SAMPLES || final_chunk {
+                            debug!(
+                                num_tokens_decoded = dr.tokens.len(),
+                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                "Transcribed all remaining data"
+                            );
                             self.buf.drain(..slice_len);
                         } else {
+                            debug!(
+                                num_tokens_decoded = dr.tokens.len(),
+                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                "Transcribed, wating for more data"
+                            );
                             break 'new_chunk;
                         };
                     } else {
@@ -104,8 +116,18 @@ impl crate::models::Model for Model {
                         self.buf
                             .drain(..(s_timestamp as usize * 320).min(slice_len));
                         if pre_drain_len > slice_len {
+                            debug!(
+                                num_tokens_decoded = dr.tokens.len(),
+                                num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                                "Transcribed, getting a new slice"
+                            );
                             break;
                         }
+                        debug!(
+                            num_tokens_decoded = dr.tokens.len(),
+                            num_tokens_transcribed = dr.tokens.len() - tokens.len(),
+                            "Transcribed, wating for more data"
+                        );
                         break 'new_chunk;
                     };
                 };
@@ -140,16 +162,17 @@ impl Model {
         }
 
         for &t in m::TEMPERATURES.iter() {
-            match self.decode(&audio_features, t) {
-                Some(dr) => {
-                    let needs_fallback = dr.compression_ratio > m::COMPRESSION_RATIO_THRESHOLD
-                        || dr.avg_logprob < m::LOGPROB_THRESHOLD;
-                    if !needs_fallback || dr.no_speech_prob > m::NO_SPEECH_THRESHOLD {
-                        return Some(dr);
-                    }
-                }
-                None => {
-                    debug!(temp = t, "Failed to decode with temp");
+            if let Some(dr) = self.decode(&audio_features, t) {
+                let needs_fallback = dr.compression_ratio > m::COMPRESSION_RATIO_THRESHOLD
+                    || dr.avg_logprob < m::LOGPROB_THRESHOLD;
+                if !needs_fallback || dr.no_speech_prob > m::NO_SPEECH_THRESHOLD {
+                    trace!(
+                        at_temp = t,
+                        logprob = dr.avg_logprob,
+                        no_speech_prob = dr.no_speech_prob,
+                        "Decoded with metrics"
+                    );
+                    return Some(dr);
                 }
             }
         }
@@ -182,7 +205,7 @@ impl Model {
         let mut probs = Language::iter().zip(probs.iter()).collect::<Vec<_>>();
         probs.sort_by(|(_, p1), (_, p2)| p2.total_cmp(p1));
         let language = self.tokenizer.token_to_id(probs[0].0.token())?;
-        trace!(language = %probs[0].0, "Detected the language");
+        trace!(language = %probs[0].0, prob = probs[0].1, "Detected the language");
         Some(language)
     }
 
@@ -251,7 +274,7 @@ impl Model {
         }
     }
 
-    #[instrument(level = Level::TRACE, skip(self, audio_features))]
+    #[instrument(level = Level::TRACE, skip_all, fields(temperature = t))]
     fn decode(&mut self, audio_features: &Tensor, t: f64) -> Option<DecodingResult> {
         let mut sum_logprob = 0f64;
         let mut tokens = vec![self.sot_token];
