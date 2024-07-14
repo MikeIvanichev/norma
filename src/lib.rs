@@ -387,6 +387,11 @@ where
             if cmp_format_f64 != Equal {
                 return cmp_format_f64;
             };
+
+            let cmp_float = (lhs.sample_format().is_float()).cmp(&rhs.sample_format().is_float());
+            if cmp_float != Equal {
+                return cmp_float;
+            }
         }
 
         let cmp_mono = (lhs.channels() == 1).cmp(&(rhs.channels() == 1));
