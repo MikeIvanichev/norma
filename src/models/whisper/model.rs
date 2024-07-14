@@ -5,7 +5,7 @@ use candle_nn::ops::softmax;
 use rand::distributions::Distribution;
 use strum::IntoEnumIterator;
 use tokenizers::Tokenizer;
-use tracing::{info, instrument, trace, warn, Level};
+use tracing::{debug, instrument, trace, warn, Level};
 
 use crate::utils::SliceExt;
 use candle_transformers::models::whisper::{self as m, audio, Config};
@@ -45,7 +45,7 @@ impl crate::models::Model for Model {
 
     const SAMPLE_RATE: u32 = 16_000;
 
-    #[instrument(level = Level::DEBUG, skip(self, data), fields(data_len = data.len()), ret)]
+    #[instrument(skip(self, data), fields(input_data_len = data.len(), self_buf_len = self.buf.len()), ret(level = Level::DEBUG))]
     fn transcribe(&mut self, data: &mut Vec<Self::Data>, final_chunk: bool) -> Option<String> {
         if self.buf.is_empty() {
             mem::swap(&mut self.buf, data);
@@ -130,6 +130,7 @@ impl crate::models::Model for Model {
 }
 
 impl Model {
+    #[instrument(level = Level::DEBUG, skip_all)]
     fn decode_with_fallback(&mut self, mel: &Tensor) -> Option<DecodingResult> {
         let audio_features = self.model.encoder_forward(mel, true).ok()?;
 
@@ -148,11 +149,11 @@ impl Model {
                     }
                 }
                 None => {
-                    info!("Failed to decode with temp: {t}");
+                    debug!(temp = t, "Failed to decode with temp");
                 }
             }
         }
-        warn!("Failed to decode with all temps, returning None");
+        debug!("Failed to decode with all temps, returning None");
         None
     }
 
@@ -250,7 +251,7 @@ impl Model {
         }
     }
 
-    #[instrument(level = Level::TRACE, skip(audio_features, self))]
+    #[instrument(level = Level::TRACE, skip(self, audio_features))]
     fn decode(&mut self, audio_features: &Tensor, t: f64) -> Option<DecodingResult> {
         let mut sum_logprob = 0f64;
         let mut tokens = vec![self.sot_token];
