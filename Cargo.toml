@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/MikeIvanichev/norma"
 homepage = "https://github.com/MikeIvanichev/norma"
 description = "A pure Rust speech to text library"
-categories = ["asynchronous", "multimedia::audio"]
+categories = ["multimedia::audio"]
 keywords = ["stt", "ai", "whisper", "transcription"]
 
 [dependencies]
