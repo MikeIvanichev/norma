@@ -16,4 +16,5 @@ updates:
         # built with the exact set of dependencies and those are up to date.
         update-types:
           - "version-update:semver-patch"
-          - "version-update:semver-minor"
+          # A lot of packages in this lib are pre 1.0.0
+          #- "version-update:semver-minor"
