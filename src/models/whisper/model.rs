@@ -156,7 +156,7 @@ impl crate::models::Model for Model {
 impl Model {
     #[instrument(level = Level::DEBUG, skip_all)]
     fn decode_with_fallback(&mut self, mel: &Tensor) -> Option<DecodingResult> {
-        let audio_features = self.model.encoder_forward(mel, true).ok()?;
+        let audio_features = self.model.encoder_forward(mel, true);
 
         if self.lang.is_none() {
             let lang = self.detect_language(&audio_features)?;
@@ -184,14 +184,10 @@ impl Model {
 
     fn detect_language(&mut self, audio_features: &Tensor) -> Option<u32> {
         let tokens = Tensor::new(&[[self.sot_token]], &self.device).ok()?;
-        let ys = self
-            .model
-            .decoder_forward(&tokens, audio_features, true)
-            .ok()?;
+        let ys = self.model.decoder_forward(&tokens, audio_features, true);
         let logits = self
             .model
             .decoder_final_linear(&ys.i(..1).ok()?)
-            .ok()?
             .i(0)
             .ok()?
             .i(0)
@@ -290,14 +286,10 @@ impl Model {
             let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device()).ok()?;
             let tokens_t = tokens_t.unsqueeze(0).ok()?;
 
-            let ys = self
-                .model
-                .decoder_forward(&tokens_t, audio_features, true)
-                .ok()?;
+            let ys = self.model.decoder_forward(&tokens_t, audio_features, true);
             let logits = self
                 .model
                 .decoder_final_linear(&ys.i(..1).ok()?)
-                .ok()?
                 .i(0)
                 .ok()?
                 .i(0)
@@ -314,16 +306,12 @@ impl Model {
         while tokens.last().unwrap() != &self.eot_token {
             let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device()).ok()?;
             let tokens_t = tokens_t.unsqueeze(0).ok()?;
-            let ys = self
-                .model
-                .decoder_forward(&tokens_t, audio_features, false)
-                .ok()?;
+            let ys = self.model.decoder_forward(&tokens_t, audio_features, false);
 
             let (_, seq_len, _) = ys.dims3().ok()?;
             let logits = self
                 .model
                 .decoder_final_linear(&ys.i((..1, seq_len - 1..)).ok()?)
-                .ok()?
                 .i(0)
                 .ok()?
                 .i(0)
@@ -452,29 +440,24 @@ impl Type {
         }
     }
 
-    pub fn encoder_forward(&mut self, x: &Tensor, flush: bool) -> candle_core::Result<Tensor> {
+    pub fn encoder_forward(&mut self, x: &Tensor, flush: bool) -> Tensor {
         match self {
-            Self::Normal(m) => m.encoder.forward(x, flush),
-            Self::Quantized(m) => m.encoder.forward(x, flush),
+            Self::Normal(m) => m.encoder.forward(x, flush).unwrap(),
+            Self::Quantized(m) => m.encoder.forward(x, flush).unwrap(),
         }
     }
 
-    pub fn decoder_forward(
-        &mut self,
-        x: &Tensor,
-        xa: &Tensor,
-        flush: bool,
-    ) -> candle_core::Result<Tensor> {
+    pub fn decoder_forward(&mut self, x: &Tensor, xa: &Tensor, flush: bool) -> Tensor {
         match self {
-            Self::Normal(m) => m.decoder.forward(x, xa, flush),
-            Self::Quantized(m) => m.decoder.forward(x, xa, flush),
+            Self::Normal(m) => m.decoder.forward(x, xa, flush).unwrap(),
+            Self::Quantized(m) => m.decoder.forward(x, xa, flush).unwrap(),
         }
     }
 
-    pub fn decoder_final_linear(&self, x: &Tensor) -> candle_core::Result<Tensor> {
+    pub fn decoder_final_linear(&self, x: &Tensor) -> Tensor {
         match self {
-            Self::Normal(m) => m.decoder.final_linear(x),
-            Self::Quantized(m) => m.decoder.final_linear(x),
+            Self::Normal(m) => m.decoder.final_linear(x).unwrap(),
+            Self::Quantized(m) => m.decoder.final_linear(x).unwrap(),
         }
     }
 
