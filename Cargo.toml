@@ -2,7 +2,7 @@
 name = "norma"
 version = "0.0.1"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.75"
 authors = ["Mike Ivanichev <mike@netstalker.dev>"]
 license = "Apache-2.0 OR MIT"
 readme = "README.md"
