@@ -3,7 +3,6 @@
 # - fmt: checks that the code is formatted according to rustfmt
 # - clippy: checks that the code does not contain any clippy warnings
 # - doc: checks that the code can be documented without errors
-# - hack: check combinations of feature flags
 # - msrv: check that the msrv specified in the crate is correct
 permissions:
   contents: read
@@ -78,6 +77,8 @@ jobs:
           components: rustfmt
       - name: cargo-semver-checks
         uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          default-features: default-features
   doc:
     # run docs generation on nightly rather than stable. This enables features like
     # https://doc.rust-lang.org/beta/unstable-book/language-features/doc-cfg.html which allows an
