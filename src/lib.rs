@@ -26,10 +26,10 @@ use tokio::sync::{mpsc, oneshot};
 
 macro_rules! parse_data {
     ($t:ty, $device:ident, $config:ident, $tx: ident, $msl: ident) => {{
+        use cpal::traits::{DeviceTrait, StreamTrait};
         use dasp_frame::Frame;
         use dasp_signal::Signal;
         use tracing::error;
-        use cpal::traits::{DeviceTrait, StreamTrait};
 
         let mut packer = crate::Packer {
             buf: Vec::with_capacity($msl),
@@ -54,7 +54,7 @@ macro_rules! parse_data {
                 },
                 None,
             )?
-        }else {
+        } else {
             #[allow(clippy::cast_possible_truncation)]
             $device.build_input_stream(
                 &$config,
@@ -63,8 +63,6 @@ macro_rules! parse_data {
                         .chunks_exact($config.channels as usize)
                         .map(|x| x.iter().sum::<$t>() / $config.channels as $t);
 
-                    //TODO Look into optimizing out calling the sample rate conversion of each call and
-                    //the associated allocations
                     let data = dasp_signal::lift(mono_data, |signal| {
                         signal.from_hz_to_hz(
                             dasp_interpolate::sinc::Sinc::new(dasp_ring_buffer::Fixed::from(
@@ -86,7 +84,6 @@ macro_rules! parse_data {
         };
         stream.play()?;
         stream
-
     }};
 }
 

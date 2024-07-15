@@ -1,7 +1,16 @@
 [package]
 name = "norma"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
+rust-version = "1.60"
+authors = ["Mike Ivanichev <mike@netstalker.dev>"]
+license = "Apache-2.0 OR MIT"
+readme = "README.md"
+repository = "https://github.com/MikeIvanichev/norma"
+homepage = "https://github.com/MikeIvanichev/norma"
+description = "A pure Rust speech to text library"
+categories = ["asynchronous", "multimedia::audio"]
+keywords = ["stt", "ai", "whisper", "transcription"]
 
 [dependencies]
 candle-core = "0.6.0"
