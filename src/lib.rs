@@ -50,7 +50,7 @@ macro_rules! parse_data {
                     packer.append(data);
                 },
                 move |err| {
-                    error! {%err, "The mic error callback was called"};
+                    error! {?err, "The mic error callback was called"};
                 },
                 None,
             )?
@@ -77,7 +77,7 @@ macro_rules! parse_data {
                     packer.append(data);
                 },
                 move |err| {
-                    error! {%err, "The mic error callback was called"};
+                    error! {?err, "The mic error callback was called"};
                 },
                 None,
             )?
@@ -114,7 +114,7 @@ impl<T, D> Packer<T, D> {
                 mem::swap(&mut *send_ref, &mut self.buf);
             }
             Err(err) => {
-                warn!(%err, "Failed to send data to the Transcriber");
+                warn!(?err, "Failed to send data to the Transcriber");
                 self.buf.clear();
             }
         };
@@ -330,7 +330,7 @@ where
                         let string = match self.model.transcribe(&mut *data, final_chunk) {
                             Ok(string) => string,
                             Err(err) => {
-                                error!(%err, "The Transcriber ran into an unrecoverable error.");
+                                error!(?err, "The Transcriber ran into an unrecoverable error.");
                                 {
                                     let mut guard =  self.stream_state.lock().unwrap_or_else(|e| {
                                         error!("Ran into a poisoned Mutex when dropping the Stream on transcriber error, clearing the poison.");
@@ -342,7 +342,7 @@ where
                                 return Err(err);
                             }
                         };
-                        if string_tx.blocking_send(string).is_err() {
+                        if !string.is_empty() && string_tx.blocking_send(string).is_err() {
                             {
                                 let mut guard =  self.stream_state.lock().unwrap_or_else(|e| {
                                         error!("Ran into a poisoned Mutex when dropping the Stream on closed Reciever, clearing the poison.");
