@@ -4,6 +4,7 @@ use candle_core::{Device, IndexOp, Tensor, D};
 use candle_nn::ops::softmax;
 use rand::distributions::Distribution;
 use strum::IntoEnumIterator;
+use thiserror::Error;
 use tokenizers::Tokenizer;
 use tracing::{debug, debug_span, instrument, trace, warn, Level};
 
@@ -40,13 +41,22 @@ pub struct Model {
     pub(crate) no_timestamps_token: u32,
 }
 
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct TranscriberError(#[from] candle_core::Error);
+
 impl crate::models::Model for Model {
     type Data = f32;
+    type Error = TranscriberError;
 
     const SAMPLE_RATE: u32 = 16_000;
 
     #[instrument(skip(self, data), fields(input_data_len = data.len(), buf_len = self.buf.len()))]
-    fn transcribe(&mut self, data: &mut Vec<Self::Data>, final_chunk: bool) -> Option<String> {
+    fn transcribe(
+        &mut self,
+        data: &mut Vec<Self::Data>,
+        final_chunk: bool,
+    ) -> Result<String, Self::Error> {
         if self.buf.is_empty() {
             mem::swap(&mut self.buf, data);
         } else {
@@ -77,7 +87,7 @@ impl crate::models::Model for Model {
             let (_, _, mel_len) = mel.dims3().unwrap();
             let mel = mel.narrow(2, 0, m::N_FRAMES.min(mel_len)).unwrap();
 
-            let Some(dr) = self.decode_with_fallback(&mel) else {
+            let Some(dr) = self.decode_with_fallback(&mel)? else {
                 self.buf.drain(..slice_len);
                 continue;
             };
@@ -145,18 +155,17 @@ impl crate::models::Model for Model {
             self.model.reset_kv_cache();
         };
 
-        if res.is_empty() {
-            None
-        } else {
-            Some(res)
-        }
+        Ok(res)
     }
 }
 
 impl Model {
     #[instrument(level = Level::DEBUG, skip_all)]
-    fn decode_with_fallback(&mut self, mel: &Tensor) -> Option<DecodingResult> {
-        let audio_features = self.model.encoder_forward(mel, true);
+    fn decode_with_fallback(
+        &mut self,
+        mel: &Tensor,
+    ) -> Result<Option<DecodingResult>, candle_core::Error> {
+        let audio_features = self.model.encoder_forward(mel, true)?;
 
         if self.lang.is_none() {
             let lang = self.detect_language(&audio_features)?;
@@ -164,60 +173,61 @@ impl Model {
         }
 
         for &t in m::TEMPERATURES.iter() {
-            if let Some(dr) = self.decode(&audio_features, t) {
-                let needs_fallback = dr.compression_ratio > m::COMPRESSION_RATIO_THRESHOLD
-                    || dr.avg_logprob < m::LOGPROB_THRESHOLD;
-                if !needs_fallback || dr.no_speech_prob > m::NO_SPEECH_THRESHOLD {
-                    trace!(
-                        at_temp = t,
-                        logprob = dr.avg_logprob,
-                        no_speech_prob = dr.no_speech_prob,
-                        "Decoded with metrics"
-                    );
-                    return Some(dr);
-                }
+            let dr = self.decode(&audio_features, t)?;
+            let needs_fallback = dr.compression_ratio > m::COMPRESSION_RATIO_THRESHOLD
+                || dr.avg_logprob < m::LOGPROB_THRESHOLD;
+            if !needs_fallback || dr.no_speech_prob > m::NO_SPEECH_THRESHOLD {
+                trace!(
+                    at_temp = t,
+                    logprob = dr.avg_logprob,
+                    no_speech_prob = dr.no_speech_prob,
+                    "Decoded with metrics"
+                );
+                return Ok(Some(dr));
             }
         }
         debug!("Failed to decode with all temps, returning None");
-        None
+        Ok(None)
     }
 
-    fn detect_language(&mut self, audio_features: &Tensor) -> Option<u32> {
-        let tokens = Tensor::new(&[[self.sot_token]], &self.device).ok()?;
-        let ys = self.model.decoder_forward(&tokens, audio_features, true);
-        let logits = self
-            .model
-            .decoder_final_linear(&ys.i(..1).ok()?)
-            .i(0)
-            .ok()?
-            .i(0)
-            .ok()?;
-        let logits = logits
-            .index_select(self.lang.language_tokens_tensor()?, 0)
-            .ok()?;
-        let probs = candle_nn::ops::softmax(&logits, D::Minus1).ok()?;
-        let probs = probs.to_vec1::<f32>().ok()?;
+    /// Panics if [`language_tokens_tensor`] is None
+    fn detect_language(&mut self, audio_features: &Tensor) -> Result<u32, candle_core::Error> {
+        let tokens = Tensor::new(&[[self.sot_token]], &self.device)?;
+        let ys = self.model.decoder_forward(&tokens, audio_features, true)?;
+        let logits = self.model.decoder_final_linear(&ys.i(..1)?)?.i(0)?.i(0)?;
+        let logits = logits.index_select(self.lang.language_tokens_tensor().unwrap(), 0)?;
+        let probs = candle_nn::ops::softmax(&logits, D::Minus1)?;
+        let probs = probs.to_vec1::<f32>()?;
         // Though this seems kinda strange, this should be faster then calling to_vec1() on
         // self.language_tokens_tensor.
         // TODO Verify
         let mut probs = Language::iter().zip(probs.iter()).collect::<Vec<_>>();
         probs.sort_by(|(_, p1), (_, p2)| p2.total_cmp(p1));
-        let language = self.tokenizer.token_to_id(probs[0].0.token())?;
+        // Since the only possible outputs are from [`language_tokens_tensor`], so we can unwrap
+        let language = self.tokenizer.token_to_id(probs[0].0.token()).unwrap();
         trace!(language = %probs[0].0, prob = probs[0].1, "Detected the language");
-        Some(language)
+        Ok(language)
     }
 
-    fn supress_timestamps(&self, logits: &Tensor) -> Option<Tensor> {
-        logits.broadcast_add(&self.supress_timestamps).ok()
+    fn supress_timestamps(&self, logits: &Tensor) -> Result<Tensor, candle_core::Error> {
+        logits.broadcast_add(&self.supress_timestamps)
     }
 
-    fn supress_non_timestamps(&self, logits: &Tensor, last_timestep: u32) -> Option<Tensor> {
+    fn supress_non_timestamps(
+        &self,
+        logits: &Tensor,
+        last_timestep: u32,
+    ) -> Result<Tensor, candle_core::Error> {
         let logits = self.supress_past_timestamps(logits, last_timestep)?;
-        logits.broadcast_add(&self.supress_non_timestamps).ok()
+        logits.broadcast_add(&self.supress_non_timestamps)
     }
 
-    fn supress_past_timestamps(&self, logits: &Tensor, last_timestep: u32) -> Option<Tensor> {
-        let len = logits.dim(D::Minus1).ok()?;
+    fn supress_past_timestamps(
+        &self,
+        logits: &Tensor,
+        last_timestep: u32,
+    ) -> Result<Tensor, candle_core::Error> {
+        let len = logits.dim(D::Minus1)?;
         let supress_vec: Vec<f32> = (0..len)
             .map(|i| {
                 if i > self.no_timestamps_token as usize && i <= last_timestep as usize {
@@ -227,9 +237,9 @@ impl Model {
                 }
             })
             .collect();
-        let supress = Tensor::new(supress_vec.as_slice(), logits.device()).ok()?;
-        let logits = logits.broadcast_add(&supress).ok()?;
-        Some(logits)
+        let supress = Tensor::new(supress_vec.as_slice(), logits.device())?;
+        let logits = logits.broadcast_add(&supress)?;
+        Ok(logits)
     }
 
     fn supress_tokens(
@@ -237,10 +247,10 @@ impl Model {
         logits: &Tensor,
         tokens: &[u32],
         last_timestep: u32,
-    ) -> Option<Tensor> {
-        let logits = logits.broadcast_add(&self.suppress_tokens).ok()?;
+    ) -> Result<Tensor, candle_core::Error> {
+        let logits = logits.broadcast_add(&self.suppress_tokens)?;
 
-        let l_token = tokens.iter().nth_back(0)?;
+        let l_token = tokens.last().unwrap();
         let sl_token = tokens.iter().nth_back(1);
 
         if l_token > &self.no_timestamps_token {
@@ -251,19 +261,13 @@ impl Model {
         }
 
         let sum_prob_timestamp = logits
-            .i(self.no_timestamps_token as usize + 1..)
-            .ok()?
-            .sum(D::Minus1)
-            .ok()?
-            .to_scalar::<f32>()
-            .ok()?;
+            .i(self.no_timestamps_token as usize + 1..)?
+            .sum(D::Minus1)?
+            .to_scalar::<f32>()?;
         let prob_non_timestamp = logits
-            .i(..self.no_timestamps_token as usize)
-            .ok()?
-            .max(D::Minus1)
-            .ok()?
-            .to_scalar::<f32>()
-            .ok()?;
+            .i(..self.no_timestamps_token as usize)?
+            .max(D::Minus1)?
+            .to_scalar::<f32>()?;
 
         if sum_prob_timestamp >= prob_non_timestamp {
             self.supress_non_timestamps(&logits, last_timestep)
@@ -272,7 +276,11 @@ impl Model {
         }
     }
 
-    fn decode(&mut self, audio_features: &Tensor, t: f64) -> Option<DecodingResult> {
+    fn decode(
+        &mut self,
+        audio_features: &Tensor,
+        t: f64,
+    ) -> Result<DecodingResult, candle_core::Error> {
         let mut sum_logprob = 0f64;
         let mut tokens = vec![self.sot_token];
         if let Some(language_token) = self.lang.language_token() {
@@ -283,61 +291,55 @@ impl Model {
         let mut last_timestamp = None;
 
         let no_speech_prob = {
-            let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device()).ok()?;
-            let tokens_t = tokens_t.unsqueeze(0).ok()?;
+            let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device())?;
+            let tokens_t = tokens_t.unsqueeze(0)?;
 
-            let ys = self.model.decoder_forward(&tokens_t, audio_features, true);
-            let logits = self
+            let ys = self
                 .model
-                .decoder_final_linear(&ys.i(..1).ok()?)
-                .i(0)
-                .ok()?
-                .i(0)
-                .ok()?;
+                .decoder_forward(&tokens_t, audio_features, true)?;
+            let logits = self.model.decoder_final_linear(&ys.i(..1)?)?.i(0)?.i(0)?;
 
-            softmax(&logits, 0)
-                .ok()?
-                .i(self.no_speech_token as usize)
-                .ok()?
-                .to_scalar::<f32>()
-                .ok()? as f64
+            softmax(&logits, 0)?
+                .i(self.no_speech_token as usize)?
+                .to_scalar::<f32>()? as f64
         };
 
         while tokens.last().unwrap() != &self.eot_token {
-            let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device()).ok()?;
-            let tokens_t = tokens_t.unsqueeze(0).ok()?;
-            let ys = self.model.decoder_forward(&tokens_t, audio_features, false);
+            let tokens_t = Tensor::new(tokens.as_slice(), audio_features.device())?;
+            let tokens_t = tokens_t.unsqueeze(0)?;
+            let ys = self
+                .model
+                .decoder_forward(&tokens_t, audio_features, false)?;
 
-            let (_, seq_len, _) = ys.dims3().ok()?;
+            let (_, seq_len, _) = ys.dims3()?;
             let logits = self
                 .model
-                .decoder_final_linear(&ys.i((..1, seq_len - 1..)).ok()?)
-                .i(0)
-                .ok()?
-                .i(0)
-                .ok()?;
+                .decoder_final_linear(&ys.i((..1, seq_len - 1..))?)?
+                .i(0)?
+                .i(0)?;
 
-            let logits = softmax(&logits, D::Minus1).ok()?;
+            let logits = softmax(&logits, D::Minus1)?;
 
             let logits = if let Some(lts) = last_timestamp {
                 self.supress_tokens(&logits, &tokens, lts)?
             } else {
                 // If this is the firs token, force it to be a timestamp, in the range: [0..1]
-                logits.broadcast_add(&self.first_token_supress).ok()?
+                logits.broadcast_add(&self.first_token_supress)?
             };
 
             let next_token = if t > 0f64 {
-                let prs = softmax(&(&logits / t).ok()?, 0).unwrap();
-                let logits_v: Vec<f32> = prs.to_vec1().ok()?;
-                let distr = rand::distributions::WeightedIndex::new(&logits_v).ok()?;
+                let prs = softmax(&(&logits / t)?, 0).unwrap();
+                let logits_v: Vec<f32> = prs.to_vec1()?;
+                let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
             } else {
-                let logits_v: Vec<f32> = logits.to_vec1().ok()?;
+                let logits_v: Vec<f32> = logits.to_vec1()?;
                 logits_v
                     .iter()
                     .enumerate()
                     .max_by(|(_, u), (_, v)| u.total_cmp(v))
-                    .map(|(i, _)| i as u32)?
+                    .map(|(i, _)| i as u32)
+                    .unwrap()
             };
 
             if next_token > self.no_timestamps_token {
@@ -345,11 +347,7 @@ impl Model {
             }
 
             tokens.push(next_token);
-            let prob = logits
-                .i(next_token as usize)
-                .ok()?
-                .to_scalar::<f32>()
-                .ok()? as f64;
+            let prob = logits.i(next_token as usize)?.to_scalar::<f32>()? as f64;
             sum_logprob += prob.ln();
 
             if tokens.len() >= self.model.config().max_target_positions - 1 {
@@ -368,7 +366,7 @@ impl Model {
             tokens.remove(tokens.len() - 2);
         }
 
-        Some(DecodingResult {
+        Ok(DecodingResult {
             tokens,
             avg_logprob,
             no_speech_prob,
@@ -440,24 +438,33 @@ impl Type {
         }
     }
 
-    pub fn encoder_forward(&mut self, x: &Tensor, flush: bool) -> Tensor {
+    pub fn encoder_forward(
+        &mut self,
+        x: &Tensor,
+        flush: bool,
+    ) -> Result<Tensor, candle_core::Error> {
         match self {
-            Self::Normal(m) => m.encoder.forward(x, flush).unwrap(),
-            Self::Quantized(m) => m.encoder.forward(x, flush).unwrap(),
+            Self::Normal(m) => m.encoder.forward(x, flush),
+            Self::Quantized(m) => m.encoder.forward(x, flush),
         }
     }
 
-    pub fn decoder_forward(&mut self, x: &Tensor, xa: &Tensor, flush: bool) -> Tensor {
+    pub fn decoder_forward(
+        &mut self,
+        x: &Tensor,
+        xa: &Tensor,
+        flush: bool,
+    ) -> Result<Tensor, candle_core::Error> {
         match self {
-            Self::Normal(m) => m.decoder.forward(x, xa, flush).unwrap(),
-            Self::Quantized(m) => m.decoder.forward(x, xa, flush).unwrap(),
+            Self::Normal(m) => m.decoder.forward(x, xa, flush),
+            Self::Quantized(m) => m.decoder.forward(x, xa, flush),
         }
     }
 
-    pub fn decoder_final_linear(&self, x: &Tensor) -> Tensor {
+    pub fn decoder_final_linear(&self, x: &Tensor) -> Result<Tensor, candle_core::Error> {
         match self {
-            Self::Normal(m) => m.decoder.final_linear(x).unwrap(),
-            Self::Quantized(m) => m.decoder.final_linear(x).unwrap(),
+            Self::Normal(m) => m.decoder.final_linear(x),
+            Self::Quantized(m) => m.decoder.final_linear(x),
         }
     }
 

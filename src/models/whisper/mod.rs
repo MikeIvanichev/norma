@@ -4,6 +4,7 @@ pub use languages::Language;
 mod model;
 use model::LanguageState;
 pub use model::Model;
+pub use model::TranscriberError;
 use model::Type;
 
 pub mod monolingual;

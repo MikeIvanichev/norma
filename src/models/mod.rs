@@ -7,6 +7,29 @@ use crate::dtype::DType;
 
 pub mod whisper;
 
+pub trait ModelDefinition {
+    type Model;
+    type Error: std::error::Error;
+
+    fn common_params(&self) -> &CommonModelParams;
+
+    fn try_to_model(self) -> impl Future<Output = Result<Self::Model, Self::Error>> + Send;
+
+    fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error>;
+}
+
+pub trait Model: Send + 'static {
+    type Data: DType;
+    type Error: std::error::Error + Send + 'static;
+    const SAMPLE_RATE: u32;
+
+    fn transcribe(
+        &mut self,
+        data: &mut Vec<Self::Data>,
+        final_chunk: bool,
+    ) -> Result<String, Self::Error>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum SelectedDevice {
     #[default]
@@ -83,22 +106,4 @@ impl CommonModelParams {
         self.string_buffer_size = string_buffer_size;
         Ok(())
     }
-}
-
-pub trait ModelDefinition {
-    type Model;
-    type Error: std::error::Error;
-
-    fn common_params(&self) -> &CommonModelParams;
-
-    fn try_to_model(self) -> impl Future<Output = Result<Self::Model, Self::Error>> + Send;
-
-    fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error>;
-}
-
-pub trait Model: Send + 'static {
-    type Data: DType;
-    const SAMPLE_RATE: u32;
-
-    fn transcribe(&mut self, data: &mut Vec<Self::Data>, final_chunk: bool) -> Option<String>;
 }

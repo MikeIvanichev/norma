@@ -159,6 +159,8 @@ pub enum StartError {
 
 type MicStreamState = Arc<Mutex<Option<oneshot::Sender<()>>>>;
 
+type TranscriberJoinHandle<T> = JoinHandle<Result<(), T>>;
+
 type StartStream = (
     Settings,
     oneshot::Sender<Result<mpsc::Receiver<String>, StartError>>,
@@ -235,7 +237,7 @@ where
     #[instrument(err(Display, level = Level::DEBUG))]
     pub fn blocking_spawn<D>(
         model_definition: D,
-    ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
+    ) -> Result<(TranscriberJoinHandle<T::Error>, TranscriberHandle), D::Error>
     where
         D: ModelDefinition<Model = T> + Debug,
     {
@@ -247,7 +249,7 @@ where
     #[instrument(err(Display, level = Level::DEBUG))]
     pub async fn spawn<D>(
         model_definition: D,
-    ) -> Result<(JoinHandle<()>, TranscriberHandle), D::Error>
+    ) -> Result<(TranscriberJoinHandle<T::Error>, TranscriberHandle), D::Error>
     where
         D: ModelDefinition<Model = T> + Debug,
     {
@@ -257,7 +259,7 @@ where
     }
 
     #[instrument(skip_all)]
-    pub fn run(mut self) {
+    pub fn run(mut self) -> Result<(), T::Error> {
         while let Some((mic_settings, res_ch)) = self.ctrl_rx.blocking_recv() {
             let recycle = thingbuf::recycling::WithCapacity::new()
                 .with_min_capacity(self.common_model_params.max_chunk_len())
@@ -325,23 +327,37 @@ where
 
                     while let Some(mut data) = data_rx.recv_ref() {
                         let final_chunk = data.capacity() > data.len();
-                        if let Some(string) = self.model.transcribe(&mut *data, final_chunk) {
-                            if string_tx.blocking_send(string).is_err() {
+                        let string = match self.model.transcribe(&mut *data, final_chunk) {
+                            Ok(string) => string,
+                            Err(err) => {
+                                error!(%err, "The Transcriber ran into an unrecoverable error.");
                                 {
                                     let mut guard =  self.stream_state.lock().unwrap_or_else(|e| {
-                                        error!("Ran into a poisoned Mutex when dropping the Stream on closed Reciever, clearing the poison.");
+                                        error!("Ran into a poisoned Mutex when dropping the Stream on transcriber error, clearing the poison.");
                                         self.stream_state.clear_poison();
                                         e.into_inner()
                                     });
                                     *guard = None;
                                 };
-                                break;
+                                return Err(err);
+                            }
+                        };
+                        if string_tx.blocking_send(string).is_err() {
+                            {
+                                let mut guard =  self.stream_state.lock().unwrap_or_else(|e| {
+                                        error!("Ran into a poisoned Mutex when dropping the Stream on closed Reciever, clearing the poison.");
+                                        self.stream_state.clear_poison();
+                                        e.into_inner()
+                                    });
+                                *guard = None;
                             };
+                            break;
                         };
                     }
                 }
             }
         }
+        Ok(())
     }
 }
 
