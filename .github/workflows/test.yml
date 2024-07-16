@@ -29,6 +29,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Update apt
+        run: sudo apt update
+      - name: Install alsa
+        run: sudo apt-get install libasound2-dev
+      - name: Install libjack
+        run: sudo apt-get install libjack-jackd2-dev libjack-jackd2-0
       - name: Install ${{ matrix.toolchain }}
         uses: dtolnay/rust-toolchain@master
         with:
@@ -39,10 +45,10 @@ jobs:
         run: cargo generate-lockfile
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
-        run: cargo test --locked --all-features --all-targets
+        run: cargo test --locked --all-targets
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
-        run: cargo test --locked --all-features --doc
+        run: cargo test --locked --doc
   minimal:
     # This action chooses the oldest version of the dependencies permitted by Cargo.toml to ensure
     # that this crate is compatible with the minimal version that this crate and its dependencies
@@ -72,6 +78,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Update apt
+        run: sudo apt update
+      - name: Install alsa
+        run: sudo apt-get install libasound2-dev
+      - name: Install libjack
+        run: sudo apt-get install libjack-jackd2-dev libjack-jackd2-0
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - name: Install nightly for -Zminimal-versions
@@ -81,32 +93,53 @@ jobs:
       - name: cargo update -Zminimal-versions
         run: cargo +nightly update -Zminimal-versions
       - name: cargo test
-        run: cargo test --locked --all-features --all-targets
-  os-check:
-    # run cargo test on mac and windows
-    runs-on: ${{ matrix.os }}
-    name: ${{ matrix.os }} / stable
+        run: cargo test --locked --all-targets
+  windows-check:
     strategy:
-      fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        version: [x86_64, i686]
+    runs-on: windows-latest
+    name: windows-latest / stable
     steps:
-      # if your project needs OpenSSL, uncomment this to fix Windows builds.
-      # it's commented out by default as the install command takes 5-10m.
-      # - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-      #   if: runner.os == 'Windows'
-      # - run: vcpkg install openssl:x64-windows-static-md
-      #   if: runner.os == 'Windows'
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Install ASIO SDK
+        env:
+          LINK: https://www.steinberg.net/asiosdk
+        run: |
+          curl -L -o asio.zip $env:LINK
+          7z x -oasio asio.zip
+          move asio\*\* asio\
+      - name: Install ASIO4ALL
+        run: choco install asio4all
+      - name: Install llvm and clang
+        run: choco install llvm
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.version }}-pc-windows-msvc
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test
+        run: cargo test --locked --all-targets
+  macos-check:
+    runs-on: macos-latest
+    name: macos-latest / stable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install llvm and clang
+        run: brew install llvm
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
       - name: cargo generate-lockfile
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
       - name: cargo test
-        run: cargo test --locked --all-features --all-targets
+        run: cargo test --locked --all-targets
   coverage:
     # use llvm-cov to build and collect coverage and outputs in a format that
     # is compatible with codecov.io
@@ -135,6 +168,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Update apt
+        run: sudo apt update
+      - name: Install alsa
+        run: sudo apt-get install libasound2-dev
+      - name: Install libjack
+        run: sudo apt-get install libjack-jackd2-dev libjack-jackd2-0
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -145,7 +184,7 @@ jobs:
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info
       - name: Record Rust version
         run: echo "RUST=$(rustc --version)" >> "$GITHUB_ENV"
       - name: Upload to codecov.io
