@@ -12,6 +12,7 @@ fn blocking_mock_model() {
     let mut stream = th.blocking_start(norma::mic::Settings::default()).unwrap();
     sleep(Duration::from_secs_f64(3f64));
     th.stop().unwrap();
+    drop(th);
 
     let mut res = Vec::new();
 
@@ -41,6 +42,7 @@ async fn mock_model() {
     let mut stream = th.start(norma::mic::Settings::default()).await.unwrap();
     tokio::time::sleep(Duration::from_secs_f64(3f64)).await;
     th.stop().unwrap();
+    drop(th);
 
     let mut res = Vec::new();
 
