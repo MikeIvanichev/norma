@@ -4,6 +4,8 @@ use std::convert::Infallible;
 use super::{Model, ModelDefinition};
 
 const SAMPLE_RATE: u32 = 44_100;
+pub const MSG: &str = "Mock Model";
+pub const FINAL_MSG: &str = "Mock Model Out";
 
 #[derive(Debug, Clone, Copy)]
 pub struct MockDef {}
@@ -44,8 +46,12 @@ impl Model for Mock {
     fn transcribe(
         &mut self,
         _data: &mut Vec<Self::Data>,
-        _final_chunk: bool,
+        final_chunk: bool,
     ) -> Result<String, Self::Error> {
-        Ok(String::new())
+        if !final_chunk {
+            Ok(MSG.to_string())
+        } else {
+            Ok(FINAL_MSG.to_string())
+        }
     }
 }
