@@ -7,6 +7,8 @@ use crate::dtype::DType;
 
 pub mod whisper;
 
+pub mod mock;
+
 pub trait ModelDefinition {
     type Model;
     type Error: std::error::Error;
