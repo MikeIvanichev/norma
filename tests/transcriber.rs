@@ -1,6 +1,9 @@
 use std::{thread::sleep, time::Duration};
 
-use norma::{models::mock::MockDef, Transcriber, TranscriberHandle};
+use norma::{
+    models::mock::{MockDef, FINAL_MSG, MSG},
+    Transcriber,
+};
 
 #[test]
 fn blocking_mock_model() {
@@ -10,7 +13,23 @@ fn blocking_mock_model() {
     sleep(Duration::from_secs_f64(3f64));
     th.stop().unwrap();
 
-    assert_eq!(stream.try_recv(), Ok(String::new()));
+    let mut res = Vec::new();
+
+    while let Some(msg) = stream.blocking_recv() {
+        res.push(msg);
+    }
+
+    assert!(!res.is_empty(), "Expected non-empty message list");
+
+    for msg in &res {
+        assert!(*msg == MSG || *msg == FINAL_MSG, "Unexpected message type");
+    }
+
+    assert_eq!(
+        res.iter().filter(|msg| *msg == FINAL_MSG).count(),
+        1,
+        "Expected exactly one FINAL_MSG"
+    );
 
     jh.join().unwrap().unwrap();
 }
@@ -23,7 +42,23 @@ async fn mock_model() {
     tokio::time::sleep(Duration::from_secs_f64(3f64)).await;
     th.stop().unwrap();
 
-    assert_eq!(stream.try_recv(), Ok(String::new()));
+    let mut res = Vec::new();
+
+    while let Some(msg) = stream.recv().await {
+        res.push(msg);
+    }
+
+    assert!(!res.is_empty(), "Expected non-empty message list");
+
+    for msg in &res {
+        assert!(*msg == MSG || *msg == FINAL_MSG, "Unexpected message type");
+    }
+
+    assert_eq!(
+        res.iter().filter(|msg| *msg == FINAL_MSG).count(),
+        1,
+        "Expected exactly one FINAL_MSG"
+    );
 
     jh.join().unwrap().unwrap();
 }
