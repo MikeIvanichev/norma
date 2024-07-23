@@ -38,11 +38,9 @@ pub enum SelectedDevice {
     Metal,
 }
 
-impl TryFrom<SelectedDevice> for candle_core::Device {
-    type Error = candle_core::Error;
-
-    fn try_from(value: SelectedDevice) -> Result<Self, Self::Error> {
-        match value {
+impl SelectedDevice {
+    pub(crate) fn into_cpal_device(self) -> Result<candle_core::Device, candle_core::Error> {
+        match self {
             SelectedDevice::Cpu => Ok(candle_core::Device::Cpu),
             SelectedDevice::Cuda(n) => candle_core::Device::new_cuda(n),
             SelectedDevice::Metal => candle_core::Device::new_metal(0),

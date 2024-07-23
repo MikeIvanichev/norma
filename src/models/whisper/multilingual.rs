@@ -141,7 +141,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     async fn try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = self.device.try_into()?;
+        let device = self.device.into_cpal_device()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = hf_hub::api::tokio::Api::new()?;
@@ -285,7 +285,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = self.device.try_into()?;
+        let device = self.device.into_cpal_device()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = sync::Api::new()?;
