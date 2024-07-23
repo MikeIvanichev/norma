@@ -3,7 +3,7 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 use tracing::{instrument, Level};
 
-use candle_core::{Device, Tensor};
+use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::whisper::{self as m, Config};
 use hf_hub::{api::sync, Repo, RepoType};
@@ -14,15 +14,34 @@ use crate::models::{CommonModelParams, ModelDefinition, SelectedDevice};
 
 use super::{model::LanguageState, token_id, Language, VocabVersion};
 
+/// The task to be preformed by a [multilingual][ModelType] model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Task {
     #[default]
-    // Transcribes the test in the detected language.
+    /// Transcribes the input in the detected language.
     Transcribe,
     /// Translates from the detected language into English.
     Translate,
 }
 
+/// Multilingual Whisper checkpoints of different sizes.
+///
+/// Models of this type support all languages listed in [Language].
+///
+/// Using a multilingual model allows you to set the [Task] the model should preform,
+/// as well as allowing the model to automaticaly infer the language being spoken.
+/// The infered language is reset for every new transcription.
+///
+/// | ModelType     | Vocab |
+/// |---------------|-------|
+/// | QuantizedTiny | v1    |
+/// | Tiny          | v1    |
+/// | Base          | v1    |
+/// | Small         | v1    |
+/// | Medium        | v1    |
+/// | Large         | v1    |
+/// | LargeV2       | v1    |
+/// | LargeV3       | v2    |
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ModelType {
@@ -85,11 +104,13 @@ impl ModelType {
     }
 }
 
+/// The definition (config) of a multilingual whisper model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
     task: Task,
+    #[serde(deserialize_with = "crate::models::de_common_model_params")]
     common_params: CommonModelParams,
 }
 
@@ -104,6 +125,20 @@ impl Definition {
         }
     }
 
+    /// With a valid range of [1..=30] seconds,
+    /// this sets how often the model should attempt to decode the recorded sample.
+    /// Smaller numbers will result in closer to real-time transcription,
+    /// while requiring more compute.
+    ///
+    /// For example, if set to 10 seconds:
+    ///
+    /// Every 10 seconds the model will attempt to transcribe the recorded segment.
+    /// If nothing is successfully transcribed, the model retains the recorded segment and
+    /// combines it with the next segment.
+    /// In this case creating a 20-second segment, which it will then attempt to transcribe.
+    /// This continues until something is successfully transcribed,
+    /// or a full segment of >= 30 seconds is accumilated.
+    /// In which case regardless of the outcome, the result will be returned.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_responsiveness(&mut self, period: Duration) -> Result<(), super::Error> {
         let period = period.as_millis();
@@ -116,12 +151,19 @@ impl Definition {
         }
     }
 
+    /// Sets the buffer size that stores recorded segments before they are transcribed.
+    /// Measured in the number of segments.
+    ///
+    /// When the buffer is full, new segments will be dropped.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         self.common_params.set_data_buffer_size(size)?;
         Ok(())
     }
 
+    /// Sets the size of the buffer that stores transcribed segments (Strings).
+    ///
+    /// When the buffer is full, new segments will be droped.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         self.common_params.set_string_buffer_size(size)?;
@@ -140,11 +182,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     async fn try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = match self.device {
-            SelectedDevice::Cpu => Device::Cpu,
-            SelectedDevice::Cuda(n) => Device::new_cuda(n)?,
-            SelectedDevice::Metal(n) => Device::new_metal(n)?,
-        };
+        let device = self.device.into_cpal_device()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = hf_hub::api::tokio::Api::new()?;
@@ -288,11 +326,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = match self.device {
-            SelectedDevice::Cpu => Device::Cpu,
-            SelectedDevice::Cuda(n) => Device::new_cuda(n)?,
-            SelectedDevice::Metal(n) => Device::new_metal(n)?,
-        };
+        let device = self.device.into_cpal_device()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = sync::Api::new()?;

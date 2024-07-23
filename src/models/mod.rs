@@ -1,6 +1,6 @@
 use std::{fmt::Debug, future::Future};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::dtype::DType;
@@ -35,7 +35,17 @@ pub enum SelectedDevice {
     #[default]
     Cpu,
     Cuda(usize),
-    Metal(usize),
+    Metal,
+}
+
+impl SelectedDevice {
+    pub(crate) fn into_cpal_device(self) -> Result<candle_core::Device, candle_core::Error> {
+        match self {
+            SelectedDevice::Cpu => Ok(candle_core::Device::Cpu),
+            SelectedDevice::Cuda(n) => candle_core::Device::new_cuda(n),
+            SelectedDevice::Metal => candle_core::Device::new_metal(0),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -46,6 +56,29 @@ pub struct CommonModelParams {
     data_buffer_size: usize,
     /// The buffer size of the channel between the Transcriber and the String Receiver
     string_buffer_size: usize,
+}
+
+fn de_common_model_params<'de, D>(deserializer: D) -> Result<CommonModelParams, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let params = CommonModelParams::deserialize(deserializer)?;
+
+    if params.data_buffer_size < 3 {
+        return Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::StructVariant,
+            &"a data buffer size greater then 2",
+        ));
+    }
+
+    if params.string_buffer_size < 3 {
+        return Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::StructVariant,
+            &"a string buffer size greater then 2",
+        ));
+    }
+
+    Ok(params)
 }
 
 #[derive(Debug, Error)]
@@ -62,16 +95,10 @@ impl CommonModelParams {
         data_buffer_size: usize,
         string_buffer_size: usize,
     ) -> Result<Self, CMPError> {
-        if data_buffer_size < 3 {
-            return Err(CMPError::DataBufSize);
-        }
-        if string_buffer_size < 3 {
-            return Err(CMPError::StringBufSize);
-        }
         Ok(Self {
             max_chunk_len,
-            data_buffer_size,
-            string_buffer_size,
+            data_buffer_size: data_buffer_size + 2,
+            string_buffer_size: string_buffer_size + 2,
         })
     }
 
@@ -92,18 +119,12 @@ impl CommonModelParams {
     }
 
     pub fn set_data_buffer_size(&mut self, data_buffer_size: usize) -> Result<(), CMPError> {
-        if data_buffer_size < 3 {
-            return Err(CMPError::DataBufSize);
-        }
-        self.data_buffer_size = data_buffer_size;
+        self.data_buffer_size = data_buffer_size + 2;
         Ok(())
     }
 
     pub fn set_string_buffer_size(&mut self, string_buffer_size: usize) -> Result<(), CMPError> {
-        if string_buffer_size < 3 {
-            return Err(CMPError::StringBufSize);
-        }
-        self.string_buffer_size = string_buffer_size;
+        self.string_buffer_size = string_buffer_size + 2;
         Ok(())
     }
 }
