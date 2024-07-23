@@ -125,7 +125,6 @@
 //!
 //!let device = SelectedDevice::Metal;
 //!```
-//!
 
 mod dtype;
 pub use dtype::DType;
