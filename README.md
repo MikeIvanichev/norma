@@ -7,6 +7,10 @@ pure Rust real time tranascription (speach to text) library.
 [![Documentation](https://docs.rs/norma/badge.svg)](https://docs.rs/norma)
 ![License](https://img.shields.io/crates/l/norma.svg)
 
+## Models
+
+- Whisper (with full long form decoding support)
+
 ## Audio backends
 
 Norma uses [cpal](https://github.com/RustAudio/cpal)
@@ -31,7 +35,7 @@ which requires libc++\_shared.so from the Android NDK to be present during execu
 
 ## Acceleraters
 
-An accelerater can be selected using ['norma::SelectedDevice'].
+An accelerater can be selected using `norma::SelectedDevice`.
 
 ### CPU and Accelerate
 
@@ -73,7 +77,3 @@ with the `metal` feature flag.
 ```rust
 let device = SelectedDevice::Metal;
 ```
-
-## Models
-
-- Whisper (with full long form decoding support)
