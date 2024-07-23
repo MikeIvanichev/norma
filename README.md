@@ -1,7 +1,7 @@
 # Norma
 
 An easy to use and extensible
-pure Rust real time tranascription (speach to text) library.
+pure Rust real-time transcription (speech-to-text) library.
 
 [![Latest version](https://img.shields.io/crates/v/norma.svg)](https://crates.io/crates/norma)
 [![Documentation](https://docs.rs/norma/badge.svg)](https://docs.rs/norma)
@@ -9,14 +9,54 @@ pure Rust real time tranascription (speach to text) library.
 
 ## Models
 
-- Whisper (with full long form decoding support)
+- Whisper (with full long-form decoding support)
+
+## Exmaple
+
+```rust
+use std::{
+    thread::{self, sleep},
+    time::Duration,
+};
+use norma::{
+    mic::Settings,
+    models::whisper::monolingual,
+    Transcriber,
+};
+
+// Define the model that will be used for transcription
+let model = monolingual::Definition::new(
+    monolingual::ModelType::DistilLargeEnV3,
+    norma::models::SelectedDevice::Cpu, // Replace with Cuda(0) or Metal as needed
+);
+
+// Spawn the transcriber in a new std thread
+let (jh, th) = Transcriber::blocking_spawn(model).unwrap();
+
+// Start recording using the default microphone
+let mut stream = th.blocking_start(Settings::default()).unwrap();
+
+thread::spawn(move || while let Some(msg) = stream.blocking_recv() {
+  println!("{}", msg);
+});
+
+sleep(Duration::from_secs(10));
+
+// Stop the transcription and drop the TranscriberHandle,
+// causing the transcriber to terminate
+th.stop().unwrap();
+drop(th);
+
+// Join the thread that was spawned for the transcriber
+jh.join().unwrap().unwrap();
+```
 
 ## Audio backends
 
 Norma uses [cpal](https://github.com/RustAudio/cpal)
-so as to be agnostice over mutiple audio backends.
+to be agnostic over multiple audio backends.
 
-This allows us to suppoert:
+This allows us to support:
 
 - Linux (via ALSA or JACK)
 - Windows (via WASAPI)
@@ -33,15 +73,16 @@ The static runtime is used by default,
 but activating the `oboe-shared-stdcxx` feature makes it use the shared runtime,
 which requires libc++\_shared.so from the Android NDK to be present during execution.
 
-## Acceleraters
+## Accelerators
 
-An accelerater can be selected using `norma::SelectedDevice`.
+An accelerator can be selected using `norma::SelectedDevice`.
 
-### CPU and Accelerate
+### CPU
 
-Using the CPU does not require any extra features, however
-when building on MacOS the `accelerate` feature can be enabled to allow
-the resulting program to utilize Apples [Accelerate framwork](https://developer.apple.com/accelerate/).
+Using the CPU does not require any extra features.
+
+However when building on MacOS the `accelerate` feature can be enabled to allow
+the resulting program to utilize Apple's [Accelerate framwork](https://developer.apple.com/accelerate/).
 
 ```rust
 let device = SelectedDevice::Cpu;
@@ -49,29 +90,29 @@ let device = SelectedDevice::Cpu;
 
 ### CUDA and cuDNN
 
-In order for the below code to compile either the `cuda`
+For the below code to compile either the `cuda`
 or the `cudnn` feature must be enabled.
 
 The `cuda` feature flag requires that CUDA
 be installed and correctly configured on your machine.
-One enabled the program will be built with CUDA support,
-and require CUDA be installed on the machine running the code.
+Once enabled the program will be built with CUDA support,
+and require CUDA on the machine running the code.
 
 The `cudnn` feature flag requires that cuDNN
 be installed and correctly configured on your machine.
-One enabled the program will be built with cuDNN support,
-and require CUDA and cuDNN be installed on the machine running the code.
+Once enabled the program will be built with cuDNN support,
+and require CUDA and cuDNN on the machine running the code.
 
 ```rust
 let device = SelectedDevice::Cuda(ord);
 ```
 
-Where `ord` is the ID of the CUDA device you want to use,
-if you only have one device or want to use the default set it to 0.
+Where `ord` is the ID of the CUDA device you want to use.
+If you only have one device or want to use the default set it to 0.
 
 ### Metal
 
-Using the Metal accelerater requires compiling the program
+Using the Metal requires compiling the program on MacOS
 with the `metal` feature flag.
 
 ```rust
