@@ -35,7 +35,19 @@ pub enum SelectedDevice {
     #[default]
     Cpu,
     Cuda(usize),
-    Metal(usize),
+    Metal,
+}
+
+impl TryFrom<SelectedDevice> for candle_core::Device {
+    type Error = candle_core::Error;
+
+    fn try_from(value: SelectedDevice) -> Result<Self, Self::Error> {
+        match value {
+            SelectedDevice::Cpu => Ok(candle_core::Device::Cpu),
+            SelectedDevice::Cuda(n) => candle_core::Device::new_cuda(n),
+            SelectedDevice::Metal => candle_core::Device::new_metal(0),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

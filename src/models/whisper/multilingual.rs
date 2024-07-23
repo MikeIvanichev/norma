@@ -3,7 +3,7 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 use tracing::{instrument, Level};
 
-use candle_core::{Device, Tensor};
+use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::whisper::{self as m, Config};
 use hf_hub::{api::sync, Repo, RepoType};
@@ -140,11 +140,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     async fn try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = match self.device {
-            SelectedDevice::Cpu => Device::Cpu,
-            SelectedDevice::Cuda(n) => Device::new_cuda(n)?,
-            SelectedDevice::Metal(n) => Device::new_metal(n)?,
-        };
+        let device = self.device.try_into()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = hf_hub::api::tokio::Api::new()?;
@@ -288,11 +284,7 @@ impl ModelDefinition for Definition {
 
     #[instrument(level = Level::DEBUG, err(Display))]
     fn blocking_try_to_model(self) -> Result<Self::Model, Self::Error> {
-        let device = match self.device {
-            SelectedDevice::Cpu => Device::Cpu,
-            SelectedDevice::Cuda(n) => Device::new_cuda(n)?,
-            SelectedDevice::Metal(n) => Device::new_metal(n)?,
-        };
+        let device = self.device.try_into()?;
 
         let (config_file, tokenizer_file, weights_file) = {
             let api = sync::Api::new()?;
