@@ -90,6 +90,7 @@ pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
     task: Task,
+    #[serde(deserialize_with = "crate::models::de_common_model_params")]
     common_params: CommonModelParams,
 }
 

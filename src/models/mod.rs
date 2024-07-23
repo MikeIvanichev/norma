@@ -1,6 +1,6 @@
 use std::{fmt::Debug, future::Future};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::dtype::DType;
@@ -58,6 +58,29 @@ pub struct CommonModelParams {
     data_buffer_size: usize,
     /// The buffer size of the channel between the Transcriber and the String Receiver
     string_buffer_size: usize,
+}
+
+fn de_common_model_params<'de, D>(deserializer: D) -> Result<CommonModelParams, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let params = CommonModelParams::deserialize(deserializer)?;
+
+    if params.data_buffer_size < 3 {
+        return Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::StructVariant,
+            &"a data buffer size greater then 2",
+        ));
+    }
+
+    if params.string_buffer_size < 3 {
+        return Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::StructVariant,
+            &"a string buffer size greater then 2",
+        ));
+    }
+
+    Ok(params)
 }
 
 #[derive(Debug, Error)]

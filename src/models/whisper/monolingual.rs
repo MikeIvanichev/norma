@@ -101,6 +101,7 @@ impl ModelType {
 pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
+    #[serde(deserialize_with = "crate::models::de_common_model_params")]
     common_params: CommonModelParams,
 }
 
