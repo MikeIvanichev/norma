@@ -42,13 +42,13 @@ spm_precompiled = { version = "0.1.3", optional = true }
 
 [features]
 default = []
+jack = ["cpal/jack"]
+#Require cuda
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
-cuda-flash = [
-  "candle-core/cuda",
-  "candle-nn/cuda",
-  "candle-transformers/flash-attn",
-]
-cudnn = ["candle-core/cudnn", "candle-nn/cuda", "candle-transformers/cuda"]
+flash-attn = ["cuda", "candle-transformers/flash-attn"]
+# Require cudnn
+cudnn = ["cuda", "candle-core/cudnn"]
+# Only applicable to MacOS
 metal = ["candle-core/metal", "candle-nn/metal", "candle-transformers/metal"]
 accelerate = [
   "candle-core/accelerate",
