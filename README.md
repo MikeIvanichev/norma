@@ -75,7 +75,7 @@ which requires libc++\_shared.so from the Android NDK to be present during execu
 
 ## Accelerators
 
-An accelerator can be selected using `norma::SelectedDevice`.
+All Accelerators are defined in `norma::SelectedDevice`.
 
 ### CPU
 
