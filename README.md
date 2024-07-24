@@ -112,7 +112,7 @@ If you only have one device or want to use the default set it to 0.
 
 ### Metal
 
-Using the Metal requires compiling the program on MacOS
+Using Metal requires compiling the program on MacOS
 with the `metal` feature flag.
 
 ```rust
