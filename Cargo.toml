@@ -27,7 +27,7 @@ dasp_ring_buffer = "0.11.0"
 dasp_interpolate = { version = "0.11.0", features = ["sinc"] }
 thingbuf = "0.1.6"
 tracing = { version = "0.1.40" }
-tokio = { version = "1.38.0", features = ["sync"] }
+tokio = { version = "1.39.1", features = ["sync"] }
 tokenizers = { version = "0.19.1" }
 rand = "0.8.5"
 serde_json = "1.0.119"
