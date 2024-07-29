@@ -107,6 +107,15 @@ pub enum Language {
 }
 
 impl Language {
+    /// Returns the token that represents a given language.
+    ///
+    /// ```
+    /// use norma::models::whisper::Language;
+    ///
+    /// let token = Language::English.token();
+    ///
+    /// assert_eq!(token, "<|en|>");
+    /// ```
     pub fn token(&self) -> &str {
         match self {
             Language::English => "<|en|>",

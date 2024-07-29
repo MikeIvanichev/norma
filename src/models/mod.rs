@@ -95,16 +95,10 @@ impl CommonModelParams {
         data_buffer_size: usize,
         string_buffer_size: usize,
     ) -> Result<Self, CMPError> {
-        if data_buffer_size < 3 {
-            return Err(CMPError::DataBufSize);
-        }
-        if string_buffer_size < 3 {
-            return Err(CMPError::StringBufSize);
-        }
         Ok(Self {
             max_chunk_len,
-            data_buffer_size,
-            string_buffer_size,
+            data_buffer_size: data_buffer_size + 2,
+            string_buffer_size: string_buffer_size + 2,
         })
     }
 
@@ -125,18 +119,12 @@ impl CommonModelParams {
     }
 
     pub fn set_data_buffer_size(&mut self, data_buffer_size: usize) -> Result<(), CMPError> {
-        if data_buffer_size < 3 {
-            return Err(CMPError::DataBufSize);
-        }
-        self.data_buffer_size = data_buffer_size;
+        self.data_buffer_size = data_buffer_size + 2;
         Ok(())
     }
 
     pub fn set_string_buffer_size(&mut self, string_buffer_size: usize) -> Result<(), CMPError> {
-        if string_buffer_size < 3 {
-            return Err(CMPError::StringBufSize);
-        }
-        self.string_buffer_size = string_buffer_size;
+        self.string_buffer_size = string_buffer_size + 2;
         Ok(())
     }
 }

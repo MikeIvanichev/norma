@@ -13,6 +13,20 @@ use crate::models::{CommonModelParams, ModelDefinition, SelectedDevice};
 
 use super::{languages::Language, token_id, LanguageState, VocabVersion};
 
+/// Monolingual Whisper checkpoints of different sizes.
+///
+/// | ModelType       | Language | Vocab |
+/// |-----------------|----------|-------|
+/// | QuantizedTinyEn | English  | EnV1  |
+/// | TinyEn          | English  | EnV1  |
+/// | BaseEn          | English  | EnV1  |
+/// | SmallEn         | English  | EnV1  |
+/// | MediumEn        | English  | EnV1  |
+/// | DistilMediumEn  | English  | v1    |
+/// | DistilLargeEnV2 | English  | v1    |
+/// | DistilLargeEnV3 | English  | v2    |
+///
+/// You can use [MultiAsMono][ModelType::MultiAsMono] to treat a [Multilingual][super::multilingual::ModelType] model as monolingual.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ModelType {
@@ -96,7 +110,7 @@ impl ModelType {
     }
 }
 
-// TODO Add restrictions to the deserialize logic
+/// The definition (config) of a monolingual whisper model.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Definition {
     model: ModelType,
@@ -115,6 +129,20 @@ impl Definition {
         }
     }
 
+    /// With a valid range of [1..=30] seconds,
+    /// this sets how often the model should attempt to decode the recorded sample.
+    /// Smaller numbers will result in closer to real-time transcription,
+    /// while requiring more compute.
+    ///
+    /// For example, if set to 10 seconds:
+    ///
+    /// Every 10 seconds the model will attempt to transcribe the recorded segment.
+    /// If nothing is successfully transcribed, the model retains the recorded segment and
+    /// combines it with the next segment.
+    /// In this case creating a 20-second segment, which it will then attempt to transcribe.
+    /// This continues until something is successfully transcribed,
+    /// or a full segment of >= 30 seconds is accumilated.
+    /// In which case regardless of the outcome, the result will be returned.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_responsiveness(&mut self, period: Duration) -> Result<(), super::Error> {
         let period = period.as_millis();
@@ -127,12 +155,19 @@ impl Definition {
         }
     }
 
+    /// Sets the size of the buffer that stores recorded segments before they are transcribed.
+    /// Mesured in number of segments.
+    ///
+    /// When the buffer is full, new segments will be droped.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         self.common_params.set_data_buffer_size(size)?;
         Ok(())
     }
 
+    /// Sets the size of the buffer that stores transcribed segments (Strings).
+    ///
+    /// When the buffer is full, new segments will be droped.
     #[instrument(skip(self), err(Display, level = Level::DEBUG))]
     pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
         self.common_params.set_string_buffer_size(size)?;
