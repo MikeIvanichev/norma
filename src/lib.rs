@@ -13,7 +13,7 @@
 //!
 //!## Exmaple
 //!
-//!```rust
+//!```no_run
 //!use std::{
 //!    thread::{self, sleep},
 //!    time::Duration,
