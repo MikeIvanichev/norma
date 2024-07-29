@@ -1,4 +1,4 @@
-/// This is intended solely for testing, this model will allways returb an empty string.
+//! This is intended solely for testing.
 use std::convert::Infallible;
 
 use super::{Model, ModelDefinition};
