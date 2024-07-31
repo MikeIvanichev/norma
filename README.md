@@ -9,7 +9,7 @@ pure Rust real-time transcription (speech-to-text) library.
 
 ## Models
 
-- Whisper (with full long-form decoding support)
+- [Whisper](https://docs.rs/norma/latest/norma/models/whisper/index.html) (with full long-form decoding support)
 
 ## Exmaple
 
