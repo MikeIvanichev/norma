@@ -6,6 +6,7 @@ use norma::{
 };
 
 #[test]
+#[ignore = "Requires a mic to run"]
 fn blocking_mock_model() {
     let (jh, th) = Transcriber::blocking_spawn(MockDef {}).unwrap();
 
@@ -36,6 +37,7 @@ fn blocking_mock_model() {
 }
 
 #[tokio::test]
+#[ignore = "Requires a mic to run"]
 async fn mock_model() {
     let (jh, th) = Transcriber::spawn(MockDef {}).await.unwrap();
 
