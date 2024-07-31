@@ -504,41 +504,49 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_quantized_tiny() {
         download_and_validate_model(ModelType::QuantizedTiny);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_tiny() {
         download_and_validate_model(ModelType::Tiny);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_base() {
         download_and_validate_model(ModelType::Base);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_small() {
         download_and_validate_model(ModelType::Small);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_medium() {
         download_and_validate_model(ModelType::Medium);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_large() {
         download_and_validate_model(ModelType::Large);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_large_v2() {
         download_and_validate_model(ModelType::LargeV2);
     }
 
     #[test]
+    #[ignore = "Not enough storage on github action host"]
     fn download_large_v3() {
         download_and_validate_model(ModelType::LargeV3);
     }
