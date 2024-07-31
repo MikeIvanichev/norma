@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 name: test
 jobs:
-  required:
+  linux:
     runs-on: ubuntu-latest
     name: ubuntu / ${{ matrix.toolchain }}
     strategy:
@@ -29,6 +29,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Cache huggingface
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface
       - name: Update apt
         run: sudo apt update
       - name: Install alsa
@@ -45,10 +50,66 @@ jobs:
         run: cargo generate-lockfile
       # https://twitter.com/jonhoo/status/1571290371124260865
       - name: cargo test --locked
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --all-targets -F "jack"
       # https://github.com/rust-lang/cargo/issues/6669
       - name: cargo test --doc
-        run: cargo test --locked --doc
+        run: cargo test --locked --doc -F "jack"
+  windows-check:
+    strategy:
+      matrix:
+        version: [x86_64, i686]
+    runs-on: windows-latest
+    name: windows-latest / stable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Cache huggingface
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface
+      - name: Install ASIO SDK
+        env:
+          LINK: https://www.steinberg.net/asiosdk
+        run: |
+          curl -L -o asio.zip $env:LINK
+          7z x -oasio asio.zip
+          move asio\*\* asio\
+      - name: Install ASIO4ALL
+        run: choco install asio4all
+      - name: Install llvm and clang
+        run: choco install llvm
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.version }}-pc-windows-msvc
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test
+        run: cargo test --locked --all-targets
+  macos-check:
+    runs-on: macos-latest
+    name: macos-latest / stable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Cache huggingface
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface
+      - name: Install llvm and clang
+        run: brew install llvm
+      - name: Install stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: cargo generate-lockfile
+        if: hashFiles('Cargo.lock') == ''
+        run: cargo generate-lockfile
+      - name: cargo test
+        run: cargo test --locked --all-targets --features "metal" "accelerate"
   minimal:
     # This action chooses the oldest version of the dependencies permitted by Cargo.toml to ensure
     # that this crate is compatible with the minimal version that this crate and its dependencies
@@ -93,53 +154,7 @@ jobs:
       - name: cargo update -Zminimal-versions
         run: cargo +nightly update -Zminimal-versions
       - name: cargo test
-        run: cargo test --locked --all-targets
-  windows-check:
-    strategy:
-      matrix:
-        version: [x86_64, i686]
-    runs-on: windows-latest
-    name: windows-latest / stable
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - name: Install ASIO SDK
-        env:
-          LINK: https://www.steinberg.net/asiosdk
-        run: |
-          curl -L -o asio.zip $env:LINK
-          7z x -oasio asio.zip
-          move asio\*\* asio\
-      - name: Install ASIO4ALL
-        run: choco install asio4all
-      - name: Install llvm and clang
-        run: choco install llvm
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          target: ${{ matrix.version }}-pc-windows-msvc
-      - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile
-      - name: cargo test
-        run: cargo test --locked --all-targets
-  macos-check:
-    runs-on: macos-latest
-    name: macos-latest / stable
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-      - name: Install llvm and clang
-        run: brew install llvm
-      - name: Install stable
-        uses: dtolnay/rust-toolchain@stable
-      - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile
-      - name: cargo test
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --all-targets -F "jack"
   coverage:
     # use llvm-cov to build and collect coverage and outputs in a format that
     # is compatible with codecov.io

@@ -22,6 +22,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Cache huggingface
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface
       - name: Update apt
         run: sudo apt update
       - name: Install alsa
@@ -34,7 +39,7 @@ jobs:
         if: hashFiles('Cargo.lock') == ''
         run: cargo generate-lockfile
       - name: cargo test --locked
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --all-targets -F "jack"
   # https://twitter.com/alcuadrado/status/1571291687837732873
   update:
     # This action checks that updating the dependencies of this crate to the latest available that
@@ -51,6 +56,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Cache huggingface
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface
       - name: Update apt
         run: sudo apt update
       - name: Install alsa
@@ -65,6 +75,6 @@ jobs:
         run: cargo update
       - name: cargo test
         if: hashFiles('Cargo.lock') != ''
-        run: cargo test --locked --all-targets
+        run: cargo test --locked --all-targets -F "jack"
         env:
           RUSTFLAGS: -D deprecated
