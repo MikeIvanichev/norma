@@ -48,7 +48,7 @@ pub enum ModelType {
 impl ModelType {
     pub fn id(&self) -> &str {
         match self {
-            ModelType::QuantizedTinyEn => "openai/whisper-tiny",
+            ModelType::QuantizedTinyEn => "lmz/candle-whisper",
             ModelType::TinyEn => "openai/whisper-tiny.en",
             ModelType::BaseEn => "openai/whisper-base.en",
             ModelType::SmallEn => "openai/whisper-small.en",
@@ -450,5 +450,80 @@ impl ModelDefinition for Definition {
             no_timestamps_token,
             lang: LanguageState::ConstLang(lang_token),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn download_and_validate_model(model: ModelType) {
+        let (config_file, tokenizer_file, _weights_file) = {
+            let api = sync::Api::new().unwrap();
+
+            let repo = api.repo(Repo::with_revision(
+                model.id().to_string(),
+                RepoType::Model,
+                model.rev().to_string(),
+            ));
+
+            if let Some(ext) = model.quantized_ext() {
+                (
+                    repo.get(&format!("config-{ext}.json")).unwrap(),
+                    repo.get(&format!("tokenizer-{ext}.json")).unwrap(),
+                    repo.get(&format!("model-{ext}-q80.gguf")).unwrap(),
+                )
+            } else {
+                (
+                    repo.get("config.json").unwrap(),
+                    repo.get("tokenizer.json").unwrap(),
+                    repo.get("model.safetensors").unwrap(),
+                )
+            }
+        };
+
+        let _config: Config =
+            serde_json::from_str(&std::fs::read_to_string(config_file).unwrap()).unwrap();
+        let _tokenizer = Tokenizer::from_file(tokenizer_file).unwrap();
+    }
+
+    #[test]
+    fn download_quantized_tiny_en() {
+        download_and_validate_model(ModelType::QuantizedTinyEn);
+    }
+
+    #[test]
+    fn download_tiny_en() {
+        download_and_validate_model(ModelType::TinyEn);
+    }
+
+    #[test]
+    fn download_base_en() {
+        download_and_validate_model(ModelType::BaseEn);
+    }
+
+    #[test]
+    fn download_small_en() {
+        download_and_validate_model(ModelType::SmallEn);
+    }
+
+    #[test]
+    fn download_medium_en() {
+        download_and_validate_model(ModelType::MediumEn);
+    }
+
+    #[test]
+    fn download_distil_medium_en() {
+        download_and_validate_model(ModelType::DistilMediumEn);
+    }
+
+    #[test]
+    fn download_distil_large_en_v2() {
+        download_and_validate_model(ModelType::DistilLargeEnV2);
+    }
+
+    #[test]
+    fn download_distil_large_en_v3() {
+        download_and_validate_model(ModelType::DistilLargeEnV3);
     }
 }

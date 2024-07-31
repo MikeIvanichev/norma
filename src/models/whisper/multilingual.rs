@@ -59,7 +59,7 @@ pub enum ModelType {
 impl ModelType {
     pub fn id(&self) -> &str {
         match self {
-            ModelType::QuantizedTiny => "openai/whisper-tiny",
+            ModelType::QuantizedTiny => "lmz/candle-whisper",
             ModelType::Tiny => "openai/whisper-tiny",
             ModelType::Base => "openai/whisper-base",
             ModelType::Small => "openai/whisper-small",
@@ -466,5 +466,80 @@ impl ModelDefinition for Definition {
                 language_tokens_tensor,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn download_and_validate_model(model: ModelType) {
+        let (config_file, tokenizer_file, _weights_file) = {
+            let api = sync::Api::new().unwrap();
+
+            let repo = api.repo(Repo::with_revision(
+                model.id().to_string(),
+                RepoType::Model,
+                model.rev().to_string(),
+            ));
+
+            if let Some(ext) = model.quantized_ext() {
+                (
+                    repo.get(&format!("config-{ext}.json")).unwrap(),
+                    repo.get(&format!("tokenizer-{ext}.json")).unwrap(),
+                    repo.get(&format!("model-{ext}-q80.gguf")).unwrap(),
+                )
+            } else {
+                (
+                    repo.get("config.json").unwrap(),
+                    repo.get("tokenizer.json").unwrap(),
+                    repo.get("model.safetensors").unwrap(),
+                )
+            }
+        };
+
+        let _config: Config =
+            serde_json::from_str(&std::fs::read_to_string(config_file).unwrap()).unwrap();
+        let _tokenizer = Tokenizer::from_file(tokenizer_file).unwrap();
+    }
+
+    #[test]
+    fn download_quantized_tiny() {
+        download_and_validate_model(ModelType::QuantizedTiny);
+    }
+
+    #[test]
+    fn download_tiny() {
+        download_and_validate_model(ModelType::Tiny);
+    }
+
+    #[test]
+    fn download_base() {
+        download_and_validate_model(ModelType::Base);
+    }
+
+    #[test]
+    fn download_small() {
+        download_and_validate_model(ModelType::Small);
+    }
+
+    #[test]
+    fn download_medium() {
+        download_and_validate_model(ModelType::Medium);
+    }
+
+    #[test]
+    fn download_large() {
+        download_and_validate_model(ModelType::Large);
+    }
+
+    #[test]
+    fn download_large_v2() {
+        download_and_validate_model(ModelType::LargeV2);
+    }
+
+    #[test]
+    fn download_large_v3() {
+        download_and_validate_model(ModelType::LargeV3);
     }
 }
