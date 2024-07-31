@@ -22,9 +22,9 @@ use super::{languages::Language, token_id, LanguageState, VocabVersion};
 /// | BaseEn          | English  | EnV1  |
 /// | SmallEn         | English  | EnV1  |
 /// | MediumEn        | English  | EnV1  |
-/// | DistilMediumEn  | English  | v1    |
-/// | DistilLargeEnV2 | English  | v1    |
-/// | DistilLargeEnV3 | English  | v2    |
+/// | DistilMediumEn  | English  | V1    |
+/// | DistilLargeEnV2 | English  | V1    |
+/// | DistilLargeEnV3 | English  | V2    |
 ///
 /// You can use [MultiAsMono][ModelType::MultiAsMono] to treat a [Multilingual][super::multilingual::ModelType] model as monolingual.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

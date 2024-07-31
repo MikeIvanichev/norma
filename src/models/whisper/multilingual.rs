@@ -34,14 +34,14 @@ pub enum Task {
 ///
 /// | ModelType     | Vocab |
 /// |---------------|-------|
-/// | QuantizedTiny | v1    |
-/// | Tiny          | v1    |
-/// | Base          | v1    |
-/// | Small         | v1    |
-/// | Medium        | v1    |
-/// | Large         | v1    |
-/// | LargeV2       | v1    |
-/// | LargeV3       | v2    |
+/// | QuantizedTiny | V1    |
+/// | Tiny          | V1    |
+/// | Base          | V1    |
+/// | Small         | V1    |
+/// | Medium        | V1    |
+/// | Large         | V1    |
+/// | LargeV2       | V1    |
+/// | LargeV3       | V2    |
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ModelType {
