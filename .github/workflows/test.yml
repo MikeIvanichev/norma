@@ -30,7 +30,7 @@ jobs:
         with:
           submodules: true
       - name: Cache huggingface
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: ${{ runner.os }}-huggingface
@@ -65,7 +65,7 @@ jobs:
         with:
           submodules: true
       - name: Cache huggingface
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: ${{ runner.os }}-huggingface
@@ -97,7 +97,7 @@ jobs:
         with:
           submodules: true
       - name: Cache huggingface
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: ${{ runner.os }}-huggingface
