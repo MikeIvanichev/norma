@@ -47,13 +47,11 @@ pub mod monolingual;
 
 pub mod multilingual;
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 
-use super::CMPError;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum VocabVersion {
     V1,
@@ -82,8 +80,6 @@ pub enum Error {
     MelBins(usize),
     #[error("The respnsivness must be over 1 second and under 30")]
     Respnsivness,
-    #[error(transparent)]
-    CMPError(#[from] CMPError),
 }
 
 fn token_id(tokenizer: &Tokenizer, token: &str) -> Result<u32, Error> {

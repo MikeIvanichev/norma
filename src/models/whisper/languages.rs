@@ -1,9 +1,9 @@
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumIter)]
 pub enum Language {
     English,
     Chinese,

@@ -10,7 +10,9 @@ fn main() {
 
     let (jh, th) = Transcriber::blocking_spawn(model_definition).unwrap();
 
-    let mut stream = th.blocking_start(norma::mic::Settings::default()).unwrap();
+    let mut stream = th
+        .blocking_start(norma::input::Settings::default())
+        .unwrap();
 
     thread::spawn(move || {
         while let Some(seg) = stream.blocking_recv() {

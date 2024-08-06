@@ -128,7 +128,7 @@
 
 mod dtype;
 pub use dtype::DType;
-pub mod mic;
+pub mod input;
 pub mod models;
 pub(crate) mod utils;
 
@@ -144,7 +144,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
     SampleRate, SupportedStreamConfigRange,
 };
-use mic::Settings;
+use input::Settings;
 use models::{CommonModelParams, Model, ModelDefinition};
 use thingbuf::recycling::WithCapacity;
 use thiserror::Error;
@@ -510,8 +510,8 @@ where
             }) {
                 Some(x) => Some(x),
                 None => match mic_settings.on_error {
-                    crate::mic::OnError::Error => return Err(StartError::SelectedDeviceNotFound),
-                    crate::mic::OnError::TryDefault => host.default_input_device(),
+                    crate::input::OnError::Error => return Err(StartError::SelectedDeviceNotFound),
+                    crate::input::OnError::TryDefault => host.default_input_device(),
                 },
             },
             None => host.default_input_device(),

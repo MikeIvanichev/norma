@@ -5,7 +5,6 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::whisper::{self as m, Config};
 use hf_hub::{api::sync, Repo, RepoType};
 use rand::SeedableRng;
-use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
 use tracing::{instrument, Level};
 
@@ -27,7 +26,8 @@ use super::{languages::Language, token_id, LanguageState, VocabVersion};
 /// | DistilLargeEnV3 | English  | V2    |
 ///
 /// You can use [MultiAsMono][ModelType::MultiAsMono] to treat a [Multilingual][super::multilingual::ModelType] model as monolingual.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ModelType {
     QuantizedTinyEn,
@@ -111,11 +111,11 @@ impl ModelType {
 }
 
 /// The definition (config) of a monolingual whisper model.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
-    #[serde(deserialize_with = "crate::models::de_common_model_params")]
     common_params: CommonModelParams,
 }
 
@@ -125,7 +125,7 @@ impl Definition {
         Self {
             model,
             device,
-            common_params: CommonModelParams::new(m::SAMPLE_RATE * 25, 3, 3).unwrap(),
+            common_params: CommonModelParams::new(m::SAMPLE_RATE * 25, 3, 3),
         }
     }
 
@@ -159,19 +159,17 @@ impl Definition {
     /// Mesured in number of segments.
     ///
     /// When the buffer is full, new segments will be droped.
-    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
-    pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        self.common_params.set_data_buffer_size(size)?;
-        Ok(())
+    #[instrument(skip(self))]
+    pub fn set_data_buffer_size(&mut self, size: usize) {
+        self.common_params.set_data_buffer_size(size);
     }
 
     /// Sets the size of the buffer that stores transcribed segments (Strings).
     ///
     /// When the buffer is full, new segments will be droped.
-    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
-    pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        self.common_params.set_string_buffer_size(size)?;
-        Ok(())
+    #[instrument(skip(self))]
+    pub fn set_string_buffer_size(&mut self, size: usize) {
+        self.common_params.set_string_buffer_size(size);
     }
 }
 
