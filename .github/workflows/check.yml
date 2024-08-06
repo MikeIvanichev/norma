@@ -98,9 +98,7 @@ jobs:
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
       - name: cargo doc
-        # We aren't setting --all-features becouse a lot of our features are platfor specific
-        # And none of our features unlock new functionality
-        run: cargo doc --no-deps
+        run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: --cfg docsrs
   msrv:
