@@ -60,6 +60,8 @@ whisper = [
   "byteorder",
   "strum",
 ]
+# A mock model used for testing
+_mock = []
 serde = ["dep:serde"]
 jack = ["cpal/jack"]
 oboe-shared-stdcxx = ["cpal/oboe-shared-stdcxx"]

@@ -4,8 +4,10 @@ use tracing::warn;
 
 use crate::dtype::DType;
 
+#[cfg(feature = "whisper")]
 pub mod whisper;
 
+#[cfg(feature = "_mock")]
 pub mod mock;
 
 pub trait ModelDefinition {
@@ -41,6 +43,7 @@ pub enum SelectedDevice {
 }
 
 impl SelectedDevice {
+    #[cfg(feature = "whisper")]
     pub(crate) fn into_cpal_device(self) -> Result<candle_core::Device, candle_core::Error> {
         match self {
             SelectedDevice::Cpu => Ok(candle_core::Device::Cpu),

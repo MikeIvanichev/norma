@@ -1,3 +1,4 @@
+#![feature("whisper")]
 //! [Whisper](https://github.com/openai/whisper) is a Speech-to-Text (STT) model developed by [OpenAI](https://openai.com/).
 //!
 //! This implementation of Whisper is powered by [candle](https://github.com/huggingface/candle).
