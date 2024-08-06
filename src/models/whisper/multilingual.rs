@@ -7,7 +7,6 @@ use candle_core::Tensor;
 use candle_nn::VarBuilder;
 use candle_transformers::models::whisper::{self as m, Config};
 use hf_hub::{api::sync, Repo, RepoType};
-use serde::{Deserialize, Serialize};
 use tokenizers::Tokenizer;
 
 use crate::models::{CommonModelParams, ModelDefinition, SelectedDevice};
@@ -15,7 +14,8 @@ use crate::models::{CommonModelParams, ModelDefinition, SelectedDevice};
 use super::{model::LanguageState, token_id, Language, VocabVersion};
 
 /// The task to be preformed by a [multilingual][ModelType] model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Task {
     #[default]
     /// Transcribes the input in the detected language.
@@ -42,7 +42,8 @@ pub enum Task {
 /// | Large         | V1    |
 /// | LargeV2       | V1    |
 /// | LargeV3       | V2    |
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ModelType {
     QuantizedTiny,
@@ -105,12 +106,12 @@ impl ModelType {
 }
 
 /// The definition (config) of a multilingual whisper model.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Definition {
     model: ModelType,
     device: SelectedDevice,
     task: Task,
-    #[serde(deserialize_with = "crate::models::de_common_model_params")]
     common_params: CommonModelParams,
 }
 
@@ -121,7 +122,7 @@ impl Definition {
             model,
             device,
             task,
-            common_params: CommonModelParams::new(m::SAMPLE_RATE * 25, 3, 3).unwrap(),
+            common_params: CommonModelParams::new(m::SAMPLE_RATE * 25, 3, 3),
         }
     }
 
@@ -151,23 +152,21 @@ impl Definition {
         }
     }
 
-    /// Sets the buffer size that stores recorded segments before they are transcribed.
-    /// Measured in the number of segments.
+    /// Sets the size of the buffer that stores recorded segments before they are transcribed.
+    /// Mesured in number of segments.
     ///
-    /// When the buffer is full, new segments will be dropped.
-    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
-    pub fn set_data_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        self.common_params.set_data_buffer_size(size)?;
-        Ok(())
+    /// When the buffer is full, new segments will be droped.
+    #[instrument(skip(self))]
+    pub fn set_data_buffer_size(&mut self, size: usize) {
+        self.common_params.set_data_buffer_size(size);
     }
 
     /// Sets the size of the buffer that stores transcribed segments (Strings).
     ///
     /// When the buffer is full, new segments will be droped.
-    #[instrument(skip(self), err(Display, level = Level::DEBUG))]
-    pub fn set_string_buffer_size(&mut self, size: usize) -> Result<(), super::Error> {
-        self.common_params.set_string_buffer_size(size)?;
-        Ok(())
+    #[instrument(skip(self))]
+    pub fn set_string_buffer_size(&mut self, size: usize) {
+        self.common_params.set_string_buffer_size(size);
     }
 }
 

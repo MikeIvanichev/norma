@@ -11,12 +11,15 @@ macro_rules! dtype {
     ($([$dtype:expr, $sample:expr] => $t:ty),+, _ => [$($it:ty),* $(,)?]  $(,)?) => {
 
         pub trait DType: Sealed + cpal::SizedSample + dasp_frame::Frame + Send + Sync + Debug $(+Duplex<$it>)+ $(+Duplex<$t>)+ + 'static{
+            #[cfg(feature = "whisper")]
             fn to_dtype() -> candle_core::DType;
+
             fn to_sample_fromat() -> cpal::SampleFormat;
         }
 
         $(
         impl crate::dtype::DType for $t {
+            #[cfg(feature = "whisper")]
             fn to_dtype() -> candle_core::DType {
                 $dtype
             }

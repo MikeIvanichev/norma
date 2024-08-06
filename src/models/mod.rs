@@ -1,12 +1,13 @@
 use std::{fmt::Debug, future::Future};
 
-use serde::{Deserialize, Deserializer, Serialize};
-use thiserror::Error;
+use tracing::warn;
 
 use crate::dtype::DType;
 
+#[cfg(feature = "whisper")]
 pub mod whisper;
 
+#[cfg(feature = "_mock")]
 pub mod mock;
 
 pub trait ModelDefinition {
@@ -32,7 +33,8 @@ pub trait Model: Send + 'static {
     ) -> Result<String, Self::Error>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum SelectedDevice {
     #[default]
     Cpu,
@@ -41,70 +43,54 @@ pub enum SelectedDevice {
 }
 
 impl SelectedDevice {
+    #[cfg(feature = "whisper")]
     pub(crate) fn into_cpal_device(self) -> Result<candle_core::Device, candle_core::Error> {
         match self {
             SelectedDevice::Cpu => Ok(candle_core::Device::Cpu),
             SelectedDevice::Cuda(n) => candle_core::Device::new_cuda(n),
+            // For now i dont see a point in letting the user set ordinal, since its
+            // rather unlikely for apple to release a > 1 gpu device.
             SelectedDevice::Metal => candle_core::Device::new_metal(0),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// It would be *insanely* wastefull to have a size below this
+const MIN_CHUNK_LEN: usize = 100;
+/// As we are using ThingBuff for our data channel we need to have a size of >= 2
+const MIN_DATA_BUF_SIZE: usize = 2;
+/// Tokio mpsc channels will panic if size is < 1, so make sure its above one
+const MIN_STRING_BUF_SIZE: usize = 1;
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommonModelParams {
-    /// The max number of samples to buffer before sending to the Transcriber
+    /// The max number of samples to buffer before sending to the Transcr ber
     max_chunk_len: usize,
-    /// The buffer size of the channel between the Mic and the Transcriber, in chunks
+    /// The buffer size of the channel between the Input and the Transcriber, in chunks
     data_buffer_size: usize,
     /// The buffer size of the channel between the Transcriber and the String Receiver
     string_buffer_size: usize,
 }
 
-fn de_common_model_params<'de, D>(deserializer: D) -> Result<CommonModelParams, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let params = CommonModelParams::deserialize(deserializer)?;
-
-    if params.data_buffer_size < 3 {
-        return Err(serde::de::Error::invalid_value(
-            serde::de::Unexpected::StructVariant,
-            &"a data buffer size greater then 2",
-        ));
-    }
-
-    if params.string_buffer_size < 3 {
-        return Err(serde::de::Error::invalid_value(
-            serde::de::Unexpected::StructVariant,
-            &"a string buffer size greater then 2",
-        ));
-    }
-
-    Ok(params)
-}
-
-#[derive(Debug, Error)]
-pub enum CMPError {
-    #[error("The Data buffer size must be at least 2")]
-    DataBufSize,
-    #[error("The String buffer size must be at least 2")]
-    StringBufSize,
-}
-
 impl CommonModelParams {
-    pub fn new(
-        max_chunk_len: usize,
-        data_buffer_size: usize,
-        string_buffer_size: usize,
-    ) -> Result<Self, CMPError> {
-        Ok(Self {
-            max_chunk_len,
+    pub fn new(max_chunk_len: usize, data_buffer_size: usize, string_buffer_size: usize) -> Self {
+        Self {
+            max_chunk_len: max_chunk_len.max(MIN_CHUNK_LEN),
+            // since we are using Thingbuff the actual buff size would be n - 2
             data_buffer_size: data_buffer_size + 2,
-            string_buffer_size: string_buffer_size + 2,
-        })
+            string_buffer_size: string_buffer_size.max(MIN_STRING_BUF_SIZE),
+        }
     }
 
     pub fn max_chunk_len(&self) -> usize {
+        if self.max_chunk_len < MIN_CHUNK_LEN {
+            warn!(max_chunk_len = self.max_chunk_len,
+                    MIN_CHUNK_LEN,
+                    "The chunk length is too small, it should not be possible to set it to this value. Returning MIN_CHUBK_LEN instead.");
+            return MIN_CHUNK_LEN;
+        }
+
         self.max_chunk_len
     }
 
@@ -117,16 +103,15 @@ impl CommonModelParams {
     }
 
     pub fn set_max_chunk_len(&mut self, max_chunk_len: usize) {
-        self.max_chunk_len = max_chunk_len;
+        self.max_chunk_len = max_chunk_len.max(MIN_CHUNK_LEN);
     }
 
-    pub fn set_data_buffer_size(&mut self, data_buffer_size: usize) -> Result<(), CMPError> {
+    pub fn set_data_buffer_size(&mut self, data_buffer_size: usize) {
+        // since we are using Thingbuff the actual buff size would be n - 2
         self.data_buffer_size = data_buffer_size + 2;
-        Ok(())
     }
 
-    pub fn set_string_buffer_size(&mut self, string_buffer_size: usize) -> Result<(), CMPError> {
-        self.string_buffer_size = string_buffer_size + 2;
-        Ok(())
+    pub fn set_string_buffer_size(&mut self, string_buffer_size: usize) {
+        self.string_buffer_size = string_buffer_size.max(MIN_STRING_BUF_SIZE);
     }
 }

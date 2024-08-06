@@ -1,3 +1,4 @@
+#![feature("whisper")]
 //! [Whisper](https://github.com/openai/whisper) is a Speech-to-Text (STT) model developed by [OpenAI](https://openai.com/).
 //!
 //! This implementation of Whisper is powered by [candle](https://github.com/huggingface/candle).
@@ -47,13 +48,11 @@ pub mod monolingual;
 
 pub mod multilingual;
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokenizers::Tokenizer;
 
-use super::CMPError;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum VocabVersion {
     V1,
@@ -82,8 +81,6 @@ pub enum Error {
     MelBins(usize),
     #[error("The respnsivness must be over 1 second and under 30")]
     Respnsivness,
-    #[error(transparent)]
-    CMPError(#[from] CMPError),
 }
 
 fn token_id(tokenizer: &Tokenizer, token: &str) -> Result<u32, Error> {

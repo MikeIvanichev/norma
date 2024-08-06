@@ -98,7 +98,7 @@ jobs:
       - name: Install nightly
         uses: dtolnay/rust-toolchain@nightly
       - name: cargo doc
-        # We aren't setting --all-features becouse a lot of our features are platfor specific
+        # We aren't setting --all-features becouse a lot of our features are platform specific
         # And none of our features unlock new functionality
         run: cargo doc --no-deps
         env:
