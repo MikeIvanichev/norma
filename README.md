@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 use norma::{
-    mic::Settings,
+    input::Settings,
     models::whisper::monolingual,
     Transcriber,
 };
