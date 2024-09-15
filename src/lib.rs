@@ -436,7 +436,9 @@ where
                         let mut guard = self.stream_state.lock().unwrap_or_else(|e| {
                                     error!("Ran into a poisoned Mutex when creating Stream, clearing the poison.");
                                     self.stream_state.clear_poison();
-                                    e.into_inner()
+                                    let mut guard = e.into_inner();
+                                    *guard = None;
+                                    guard
                                 });
 
                         if res_ch.send(Ok(string_rx)).is_ok() {
