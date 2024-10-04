@@ -335,6 +335,7 @@ impl Model {
                         *x = 0.0
                     }
                 });
+                debug_assert!(!&logits_v.iter().any(|&x| x.is_nan()));
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
             } else {
