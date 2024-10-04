@@ -323,13 +323,18 @@ impl Model {
             let logits = if let Some(lts) = last_timestamp {
                 self.supress_tokens(&logits, &tokens, lts)?
             } else {
-                // If this is the firs token, force it to be a timestamp, in the range: [0..1]
+                // If this is the first token, force it to be a timestamp, in the range: [0..1]
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
             let next_token = if t > 0f64 {
                 let prs = softmax(&(&logits / t)?, 0).unwrap();
-                let logits_v: Vec<f32> = prs.to_vec1()?;
+                let mut logits_v: Vec<f32> = prs.to_vec1()?;
+                logits_v.iter_mut().for_each(|x| {
+                    if x.is_nan() {
+                        *x = 0.0
+                    }
+                });
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
             } else {
