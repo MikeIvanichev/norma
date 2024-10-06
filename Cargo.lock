@@ -1645,6 +1645,7 @@ dependencies = [
  "jod-thread",
  "openssl",
  "rand",
+ "schannel",
  "serde",
  "serde_json",
  "strum",
@@ -2268,9 +2269,9 @@ dependencies = [
 
 [[package]]
 name = "schannel"
-version = "0.1.25"
+version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19ea6da6180bc0aca0973d69ef8aa2f4409e9815060b7b69377c67cc021734be"
+checksum = "e9aaafd5a2b6e3d657ff009d82fbd630b6bd54dd4eb06f21693925cdf80f9b8b"
 dependencies = [
  "windows-sys 0.59.0",
 ]
