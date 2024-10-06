@@ -327,6 +327,8 @@ impl Model {
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
+            warn!(%logits, "logits");
+
             debug_assert!(!&logits
                 .flatten_all()
                 .unwrap()
@@ -334,10 +336,6 @@ impl Model {
                 .unwrap()
                 .iter()
                 .any(|&x| x != f32::NEG_INFINITY));
-
-            warn!(%logits, "logits");
-
-            warn!(%logits, "logits");
 
             let next_token = if t > 0f64 {
                 let prs = softmax(&(&logits / t)?, 0).unwrap();
