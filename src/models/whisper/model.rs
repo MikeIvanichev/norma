@@ -280,11 +280,11 @@ impl Model {
 
         let sum_prob_timestamp = logits
             .i(self.no_timestamps_token as usize + 1..)?
-            .sum(0)?
+            .sum(D::Minus1)?
             .to_scalar::<f32>()?;
         let prob_non_timestamp = logits
             .i(..self.no_timestamps_token as usize)?
-            .max(0)?
+            .max(D::Minus1)?
             .to_scalar::<f32>()?;
 
         if sum_prob_timestamp >= prob_non_timestamp {
