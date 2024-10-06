@@ -323,6 +323,12 @@ impl Model {
                 .model
                 .decoder_forward(&tokens_t, audio_features, false)?;
 
+            debug_assert!(&ys
+                .flatten_all()?
+                .to_vec1::<f32>()?
+                .iter()
+                .any(|&x| x != f32::NEG_INFINITY));
+
             let (_, seq_len, _) = ys.dims3()?;
             let logits = self
                 .model
@@ -330,7 +336,7 @@ impl Model {
                 .i(0)?
                 .i(0)?;
 
-            debug_assert!(!&logits
+            debug_assert!(&logits
                 .flatten_all()?
                 .to_vec1::<f32>()?
                 .iter()
@@ -338,7 +344,7 @@ impl Model {
 
             let logits = softmax(&logits, D::Minus1)?;
 
-            debug_assert!(!&logits
+            debug_assert!(&logits
                 .flatten_all()?
                 .to_vec1::<f32>()?
                 .iter()
@@ -351,14 +357,25 @@ impl Model {
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
-            debug_assert!(!&logits
+            debug_assert!(&logits
                 .flatten_all()?
                 .to_vec1::<f32>()?
                 .iter()
                 .any(|&x| x != f32::NEG_INFINITY));
 
             let next_token = if t > 0f64 {
-                let prs = softmax(&(&logits / t)?, 0).unwrap();
+                let logits = (&logits / t)?;
+                debug_assert!(&logits
+                    .flatten_all()?
+                    .to_vec1::<f32>()?
+                    .iter()
+                    .any(|&x| x != f32::NEG_INFINITY));
+                let prs = softmax(&logits, 0).unwrap();
+                debug_assert!(&logits
+                    .flatten_all()?
+                    .to_vec1::<f32>()?
+                    .iter()
+                    .any(|&x| x != f32::NEG_INFINITY));
                 let logits_v: Vec<f32> = prs.to_vec1()?;
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
