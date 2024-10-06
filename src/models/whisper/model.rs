@@ -327,6 +327,7 @@ impl Model {
                 .decoder_final_linear(&ys.i((..1, seq_len - 1..))?)?
                 .i(0)?
                 .i(0)?;
+
             let logits = softmax(&logits, D::Minus1)?;
 
             let logits = if let Some(lts) = last_timestamp {
@@ -337,8 +338,7 @@ impl Model {
             };
 
             let next_token = if t > 0f64 {
-                let logits = (&logits / t)?;
-                let prs = softmax(&logits, 0).unwrap();
+                let prs = softmax(&(&logits / t)?, 0).unwrap();
                 let logits_v: Vec<f32> = prs.to_vec1()?;
                 if !logits_v.iter().any(|x| !x.is_nan()) {
                     tokens.push(self.eot_token);

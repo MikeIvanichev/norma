@@ -46,7 +46,6 @@ tokio = { version = "1.40.0", features = ["full"] }
 [target.'cfg(any())'.dependencies]
 openssl = { version = "0.10.55", optional = true }
 
-
 [features]
 default = [
   "serde",
