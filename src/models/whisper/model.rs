@@ -218,7 +218,17 @@ impl Model {
         logits: &Tensor,
         last_timestep: u32,
     ) -> Result<Tensor, candle_core::Error> {
+        debug_assert!(&logits
+            .flatten_all()?
+            .to_vec1::<f32>()?
+            .iter()
+            .any(|&x| x != f32::NEG_INFINITY));
         let logits = self.supress_past_timestamps(logits, last_timestep)?;
+        debug_assert!(&logits
+            .flatten_all()?
+            .to_vec1::<f32>()?
+            .iter()
+            .any(|&x| x != f32::NEG_INFINITY));
         logits.broadcast_add(&self.supress_non_timestamps)
     }
 
@@ -270,11 +280,11 @@ impl Model {
 
         let sum_prob_timestamp = logits
             .i(self.no_timestamps_token as usize + 1..)?
-            .sum(D::Minus1)?
+            .sum(0)?
             .to_scalar::<f32>()?;
         let prob_non_timestamp = logits
             .i(..self.no_timestamps_token as usize)?
-            .max(D::Minus1)?
+            .max(0)?
             .to_scalar::<f32>()?;
 
         if sum_prob_timestamp >= prob_non_timestamp {
