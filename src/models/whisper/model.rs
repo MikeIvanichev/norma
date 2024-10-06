@@ -351,8 +351,18 @@ impl Model {
                 .any(|&x| x != f32::NEG_INFINITY));
 
             let logits = if let Some(lts) = last_timestamp {
+                debug_assert!(&logits
+                    .flatten_all()?
+                    .to_vec1::<f32>()?
+                    .iter()
+                    .any(|&x| x != f32::NEG_INFINITY));
                 self.supress_tokens(&logits, &tokens, lts)?
             } else {
+                debug_assert!(&logits
+                    .flatten_all()?
+                    .to_vec1::<f32>()?
+                    .iter()
+                    .any(|&x| x != f32::NEG_INFINITY));
                 // If this is the first token, force it to be a timestamp, in the range: [0..1]
                 logits.broadcast_add(&self.first_token_supress)?
             };
