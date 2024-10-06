@@ -304,6 +304,8 @@ impl Model {
                 .to_scalar::<f32>()? as f64
         };
 
+        warn!(no_speech_prob);
+
         // If the no speech prob is over the threshold we can return early
         if no_speech_prob > m::NO_SPEECH_THRESHOLD {
             return Ok(DecodingResult {
