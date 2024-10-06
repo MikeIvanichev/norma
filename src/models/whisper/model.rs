@@ -358,6 +358,7 @@ impl Model {
                     .any(|&x| x != f32::NEG_INFINITY));
                 self.supress_tokens(&logits, &tokens, lts)?
             } else {
+                warn!("last timespamt is none");
                 debug_assert!(&logits
                     .flatten_all()?
                     .to_vec1::<f32>()?
