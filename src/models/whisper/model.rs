@@ -351,6 +351,7 @@ impl Model {
                 .any(|&x| x != f32::NEG_INFINITY));
 
             let logits = if let Some(lts) = last_timestamp {
+                warn!("last timespamt is some");
                 debug_assert!(&logits
                     .flatten_all()?
                     .to_vec1::<f32>()?
