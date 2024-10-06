@@ -318,7 +318,19 @@ impl Model {
                 .i(0)?
                 .i(0)?;
 
+            debug_assert!(!&logits
+                .flatten_all()?
+                .to_vec1::<f32>()?
+                .iter()
+                .any(|&x| x != f32::NEG_INFINITY));
+
             let logits = softmax(&logits, D::Minus1)?;
+
+            debug_assert!(!&logits
+                .flatten_all()?
+                .to_vec1::<f32>()?
+                .iter()
+                .any(|&x| x != f32::NEG_INFINITY));
 
             let logits = if let Some(lts) = last_timestamp {
                 self.supress_tokens(&logits, &tokens, lts)?
@@ -327,28 +339,15 @@ impl Model {
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
-            warn!(%logits, "logits");
-
             debug_assert!(!&logits
-                .flatten_all()
-                .unwrap()
-                .to_vec1::<f32>()
-                .unwrap()
+                .flatten_all()?
+                .to_vec1::<f32>()?
                 .iter()
                 .any(|&x| x != f32::NEG_INFINITY));
 
             let next_token = if t > 0f64 {
                 let prs = softmax(&(&logits / t)?, 0).unwrap();
-                warn!(%prs, "prs");
-                debug_assert!(!&prs
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap()
-                    .iter()
-                    .any(|&x| x.is_nan()));
                 let logits_v: Vec<f32> = prs.to_vec1()?;
-                debug_assert!(!&logits_v.iter().any(|&x| x.is_nan()));
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
             } else {
