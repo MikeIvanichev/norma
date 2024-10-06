@@ -327,14 +327,24 @@ impl Model {
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
+            debug_assert!(!&logits
+                .flatten_all()
+                .unwrap()
+                .to_vec1::<f32>()
+                .unwrap()
+                .iter()
+                .any(|&x| x.is_nan()));
+
             let next_token = if t > 0f64 {
                 let prs = softmax(&(&logits / t)?, 0).unwrap();
-                let mut logits_v: Vec<f32> = prs.to_vec1()?;
-                logits_v.iter_mut().for_each(|x| {
-                    if x.is_nan() {
-                        *x = 0.0
-                    }
-                });
+                debug_assert!(!&prs
+                    .flatten_all()
+                    .unwrap()
+                    .to_vec1::<f32>()
+                    .unwrap()
+                    .iter()
+                    .any(|&x| x.is_nan()));
+                let logits_v: Vec<f32> = prs.to_vec1()?;
                 debug_assert!(!&logits_v.iter().any(|&x| x.is_nan()));
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
