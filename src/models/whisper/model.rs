@@ -250,11 +250,19 @@ impl Model {
     ) -> Result<Tensor, candle_core::Error> {
         let logits = logits.broadcast_add(&self.suppress_tokens)?;
 
+        debug_assert!(&logits
+            .flatten_all()?
+            .to_vec1::<f32>()?
+            .iter()
+            .any(|&x| x != f32::NEG_INFINITY));
+
         let l_token = tokens.last().unwrap();
         let sl_token = tokens.iter().nth_back(1);
 
         if l_token > &self.no_timestamps_token {
+            warn!("last token is a timestamp");
             if sl_token.is_some_and(|&token| token >= self.eot_token) {
+                warn!("second to last token is a timestamp");
                 return self.supress_timestamps(&logits);
             }
             return self.supress_non_timestamps(&logits, last_timestep);
@@ -270,8 +278,10 @@ impl Model {
             .to_scalar::<f32>()?;
 
         if sum_prob_timestamp >= prob_non_timestamp {
+            warn!("suppressing non timestamps");
             self.supress_non_timestamps(&logits, last_timestep)
         } else {
+            warn!("suppressing timestamps");
             self.supress_past_timestamps(&logits, last_timestep)
         }
     }
