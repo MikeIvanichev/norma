@@ -337,6 +337,8 @@ impl Model {
 
             warn!(%logits, "logits");
 
+            warn!(%logits, "logits");
+
             let next_token = if t > 0f64 {
                 let prs = softmax(&(&logits / t)?, 0).unwrap();
                 warn!(%prs, "prs");
