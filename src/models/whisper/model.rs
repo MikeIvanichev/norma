@@ -218,17 +218,7 @@ impl Model {
         logits: &Tensor,
         last_timestep: u32,
     ) -> Result<Tensor, candle_core::Error> {
-        debug_assert!(&logits
-            .flatten_all()?
-            .to_vec1::<f32>()?
-            .iter()
-            .any(|&x| x != f32::NEG_INFINITY));
         let logits = self.supress_past_timestamps(logits, last_timestep)?;
-        debug_assert!(&logits
-            .flatten_all()?
-            .to_vec1::<f32>()?
-            .iter()
-            .any(|&x| x != f32::NEG_INFINITY));
         logits.broadcast_add(&self.supress_non_timestamps)
     }
 
@@ -260,19 +250,11 @@ impl Model {
     ) -> Result<Tensor, candle_core::Error> {
         let logits = logits.broadcast_add(&self.suppress_tokens)?;
 
-        debug_assert!(&logits
-            .flatten_all()?
-            .to_vec1::<f32>()?
-            .iter()
-            .any(|&x| x != f32::NEG_INFINITY));
-
         let l_token = tokens.last().unwrap();
         let sl_token = tokens.iter().nth_back(1);
 
         if l_token > &self.no_timestamps_token {
-            warn!("last token is a timestamp");
             if sl_token.is_some_and(|&token| token >= self.eot_token) {
-                warn!("second to last token is a timestamp");
                 return self.supress_timestamps(&logits);
             }
             return self.supress_non_timestamps(&logits, last_timestep);
@@ -288,10 +270,8 @@ impl Model {
             .to_scalar::<f32>()?;
 
         if sum_prob_timestamp >= prob_non_timestamp {
-            warn!("suppressing non timestamps");
             self.supress_non_timestamps(&logits, last_timestep)
         } else {
-            warn!("suppressing timestamps");
             self.supress_past_timestamps(&logits, last_timestep)
         }
     }
@@ -324,8 +304,6 @@ impl Model {
                 .to_scalar::<f32>()? as f64
         };
 
-        warn!(no_speech_prob);
-
         // If the no speech prob is over the threshold we can return early
         if no_speech_prob > m::NO_SPEECH_THRESHOLD {
             return Ok(DecodingResult {
@@ -343,72 +321,29 @@ impl Model {
                 .model
                 .decoder_forward(&tokens_t, audio_features, false)?;
 
-            debug_assert!(&ys
-                .flatten_all()?
-                .to_vec1::<f32>()?
-                .iter()
-                .any(|&x| x != f32::NEG_INFINITY));
-
             let (_, seq_len, _) = ys.dims3()?;
             let logits = self
                 .model
                 .decoder_final_linear(&ys.i((..1, seq_len - 1..))?)?
                 .i(0)?
                 .i(0)?;
-
-            debug_assert!(&logits
-                .flatten_all()?
-                .to_vec1::<f32>()?
-                .iter()
-                .any(|&x| x != f32::NEG_INFINITY));
-
             let logits = softmax(&logits, D::Minus1)?;
 
-            debug_assert!(&logits
-                .flatten_all()?
-                .to_vec1::<f32>()?
-                .iter()
-                .any(|&x| x != f32::NEG_INFINITY));
-
             let logits = if let Some(lts) = last_timestamp {
-                warn!("last timespamt is some");
-                debug_assert!(&logits
-                    .flatten_all()?
-                    .to_vec1::<f32>()?
-                    .iter()
-                    .any(|&x| x != f32::NEG_INFINITY));
                 self.supress_tokens(&logits, &tokens, lts)?
             } else {
-                warn!("last timespamt is none");
-                debug_assert!(&logits
-                    .flatten_all()?
-                    .to_vec1::<f32>()?
-                    .iter()
-                    .any(|&x| x != f32::NEG_INFINITY));
                 // If this is the first token, force it to be a timestamp, in the range: [0..1]
                 logits.broadcast_add(&self.first_token_supress)?
             };
 
-            debug_assert!(&logits
-                .flatten_all()?
-                .to_vec1::<f32>()?
-                .iter()
-                .any(|&x| x != f32::NEG_INFINITY));
-
             let next_token = if t > 0f64 {
                 let logits = (&logits / t)?;
-                debug_assert!(&logits
-                    .flatten_all()?
-                    .to_vec1::<f32>()?
-                    .iter()
-                    .any(|&x| x != f32::NEG_INFINITY));
                 let prs = softmax(&logits, 0).unwrap();
-                debug_assert!(&logits
-                    .flatten_all()?
-                    .to_vec1::<f32>()?
-                    .iter()
-                    .any(|&x| x != f32::NEG_INFINITY));
                 let logits_v: Vec<f32> = prs.to_vec1()?;
+                if !logits_v.iter().any(|x| !x.is_nan()) {
+                    tokens.push(self.eot_token);
+                    break;
+                }
                 let distr = rand::distributions::WeightedIndex::new(&logits_v).unwrap();
                 distr.sample(&mut self.rng) as u32
             } else {
