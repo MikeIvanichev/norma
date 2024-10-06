@@ -335,16 +335,11 @@ impl Model {
                 .iter()
                 .any(|&x| x.is_nan()));
 
+            warn!(%logits, "logits");
+
             let next_token = if t > 0f64 {
-                let logits = (&logits / t)?;
-                debug_assert!(!&logits
-                    .flatten_all()
-                    .unwrap()
-                    .to_vec1::<f32>()
-                    .unwrap()
-                    .iter()
-                    .any(|&x| x.is_nan()));
-                let prs = softmax(&logits, 0).unwrap();
+                let prs = softmax(&(&logits / t)?, 0).unwrap();
+                warn!(%prs, "prs");
                 debug_assert!(!&prs
                     .flatten_all()
                     .unwrap()
