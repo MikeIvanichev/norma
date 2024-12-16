@@ -13,7 +13,7 @@ categories = ["multimedia::audio"]
 keywords = ["stt", "ai", "whisper", "transcription"]
 
 [dependencies]
-thiserror = "1.0.61"
+thiserror = "2.0.7"
 cpal = "0.15.3"
 dasp_sample = "0.11.0"
 dasp_frame = "0.11.0"
